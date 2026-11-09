@@ -32,7 +32,8 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-share-intent", { "androidIntentFilters": ["text/*"] }
     ],
     "experiments": {
       "typedRoutes": true,
