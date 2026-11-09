@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
+import { ShareReceiver } from '@/features/analysis/ShareReceiver';
 
 export default function RootLayout() {
   const [client] = useState(
@@ -15,9 +17,12 @@ export default function RootLayout() {
       }),
   );
   return (
-    <QueryClientProvider client={client}>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#fff' } }} />
-    </QueryClientProvider>
+    <ShareIntentProvider>
+      <QueryClientProvider client={client}>
+        <StatusBar style="dark" />
+        <ShareReceiver />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#fff' } }} />
+      </QueryClientProvider>
+    </ShareIntentProvider>
   );
 }
