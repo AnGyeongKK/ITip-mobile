@@ -44,3 +44,7 @@ example
 
 # env
 .env
+
+# 시연용 APK 산출물
+*.apk
+delivery/itip-demo.apk

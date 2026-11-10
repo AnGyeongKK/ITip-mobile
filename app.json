@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.nahyanghee.ITipmobile"
+      "package": "com.nahyanghee.ITipmobile",
+      "versionCode": 1
     },
     "web": {
       "output": "server",
@@ -46,7 +47,8 @@
         "expo-build-properties",
         {
           "android": {
-            "useLegacyPackaging": true
+            "useLegacyPackaging": true,
+            "usesCleartextTraffic": true
           }
         }
       ]
