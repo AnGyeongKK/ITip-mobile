@@ -4,7 +4,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { displayFolderName } from '@/api/archive';
 import { Breadcrumb } from '@/components/AppShell';
 import { RecordCard } from '@/components/RecordCard';
 import { Button, EmptyView, ErrorView, LoadingView } from '@/components/ui';
@@ -39,7 +38,7 @@ export default function AddRecordsScreen() {
           <View style={{ marginBottom: space.lg }}>
             <Breadcrumb label="‹ 폴더로 돌아가기" />
             <Text style={[font.title, { marginTop: space.sm }]}>기록 추가</Text>
-            <Text style={[font.sub, { marginTop: space.xs }]}>{folder.data ? `${displayFolderName(folder.data.name)} 폴더에 넣을 기록을 골라 주세요.` : ' '}</Text>
+            <Text style={[font.sub, { marginTop: space.xs }]}>{folder.data ? `${folder.data.name} 폴더에 넣을 기록을 골라 주세요.` : ' '}</Text>
             <TextInput value={text} onChangeText={setText} placeholder="분석 기록 검색" placeholderTextColor={colors.textMuted} style={styles.search} />
           </View>
         }

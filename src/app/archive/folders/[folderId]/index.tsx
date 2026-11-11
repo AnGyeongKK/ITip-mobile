@@ -3,7 +3,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { displayFolderName } from '@/api/archive';
 import { AgentSheet } from '@/components/AgentSheet';
 import { AppScreen, Breadcrumb } from '@/components/AppShell';
 import { FolderNameModal } from '@/components/FolderNameModal';
@@ -29,7 +28,7 @@ export default function FolderDetailScreen() {
   if (folder.isPending) return <AppScreen><LoadingView /></AppScreen>;
   if (folder.isError) return <AppScreen><ErrorView error={folder.error} onRetry={folder.refetch} /></AppScreen>;
   const f = folder.data;
-  const name = displayFolderName(f.name);
+  const name = f.name;
   const filtered = !!q || keywordIds.length > 0;
   const toggleKw = (id: string) => setKeywordIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 

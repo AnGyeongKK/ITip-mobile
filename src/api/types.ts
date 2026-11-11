@@ -225,17 +225,9 @@ export interface HomeData {
 }
 
 // ---------- 채팅 (CHAT-01~07) ----------
-export interface ChatScope {
-  type: 'ALL' | 'FILTERED';
-  folderId?: Id | null;
-  keywordIds?: Id[];
-  q?: string | null;
-  /**
-   * ⚠️ 명세에 없는 제안 필드. 11/06 피그마의 '현재 영상 참고' 에이전트(AGENT-BOTTOMSHEET)는
-   * 영상 하나만 범위로 잡는데, CHAT-01 scope에는 영상 단위 필드가 없다. 백엔드와 합의 필요.
-   */
-  recordId?: Id | null;
-}
+export type ChatScope =
+  | { type: 'ALL' | 'FILTERED'; folderId?: Id | null; keywordIds?: Id[]; q?: string | null }
+  | { type: 'RECORD'; recordId: Id; focusSectionId?: Id | null };
 
 export interface Conversation {
   conversationId: Id;
@@ -270,7 +262,7 @@ export interface ChatSource {
   analyzedAt: string;
 }
 
-export type AssistantStatus = 'STREAMING' | 'COMPLETED' | 'INCOMPLETE' | 'FAILED';
+export type AssistantStatus = 'QUEUED' | 'GENERATING' | 'COMPLETED' | 'INCOMPLETE' | 'FAILED';
 
 export interface ChatMessage {
   messageId: Id;
@@ -280,7 +272,7 @@ export interface ChatMessage {
   createdAt: string;
   // ASSISTANT 전용
   replyToMessageId?: Id;
-  status?: AssistantStatus | string;
+  status?: AssistantStatus;
   sources?: ChatSource[];
   finishReason?: 'STOP' | 'INSUFFICIENT_EVIDENCE' | 'LENGTH' | string | null;
   completedAt?: string | null;
@@ -296,7 +288,7 @@ export interface SseMeta { conversationId: Id; userMessageId: Id; assistantMessa
 export interface SseDelta { assistantMessageId: Id; sequence: number; text: string }
 export interface SseSources { assistantMessageId: Id; sources: ChatSource[]; usedRecordCount: number }
 export interface SseDone { assistantMessageId: Id; status: string; finishReason: string; usedRecordCount: number }
-export interface SseError { assistantMessageId?: Id; status?: string; code: string; message: string; retryable: boolean }
+export interface SseError { assistantMessageId?: Id; status?: 'INCOMPLETE' | 'FAILED'; code: string; message: string; retryable: boolean }
 
 // ---------- PLAN-02 이용 한도 ----------
 export interface Entitlements {

@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { newIdempotencyKey } from '../api/client';
 import * as chatApi from '../api/chat';
-import type { ChatMessage, ChatScope, ChatSource } from '../api/types';
+import type { AssistantStatus, ChatMessage, ChatScope, ChatSource } from '../api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatRange } from '../lib/format';
 import { colors, font, radius, space } from '../theme/tokens';
@@ -29,23 +29,24 @@ type UiMessage = {
   key: string;
   role: 'USER' | 'ASSISTANT';
   content: string;
-  status?: 'STREAMING' | 'COMPLETED' | 'INCOMPLETE' | 'FAILED';
+  status?: AssistantStatus;
   sources?: ChatSource[];
   finishReason?: string | null;
   messageId?: string;
   clientRequestId?: string;
-  retryOfMessageId?: string | null;
+  retryable?: boolean;
 };
 
 const fromServer = (m: ChatMessage): UiMessage => ({
   key: m.messageId,
   role: m.role,
   content: m.content,
-  status: (m.status as UiMessage['status']) ?? undefined,
+  status: m.status,
   sources: m.sources,
   finishReason: m.finishReason,
   messageId: m.messageId,
   clientRequestId: m.clientRequestId,
+  retryable: m.retryable,
 });
 
 type Props = {
@@ -57,7 +58,13 @@ type Props = {
   startFull?: boolean;
 };
 
-export function AgentSheet({ visible, onClose: onCloseProp, context, conversationId: initialId, startFull }: Props) {
+type PendingAssistant = { conversationId: string; clientRequestId: string; assistantId?: string };
+
+export function AgentSheet(props: Props) {
+  return <AgentSession key={JSON.stringify([props.conversationId, props.context.scope])} {...props} />;
+}
+
+function AgentSession({ visible, onClose: onCloseProp, context, conversationId: initialId, startFull }: Props) {
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   // 키보드가 열린 채로 닫아도 한 번에 닫히게
@@ -66,13 +73,16 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
   const [convId, setConvId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false); // 답변 생성 중 → 전송 잠금 (P-50)
+  const [busy, setBusy] = useState(!!initialId);
+  const [savedScope, setSavedScope] = useState<ChatScope>();
+  const [pending, setPending] = useState<PendingAssistant | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const operation = useRef<AbortController | null>(null);
   const createKeyRef = useRef(newIdempotencyKey());
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [kbOpen, setKbOpen] = useState(false);
-  const dragY = useRef(new Animated.Value(0)).current;
+  const [dragY] = useState(() => new Animated.Value(0));
   const resetDrag = useCallback(() => Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start(), [dragY]);
   const pan = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -95,51 +105,84 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  // 저장된 대화 불러오기
-  useEffect(() => {
-    if (!visible) return;
-    setFull(!!startFull);
-    if (initialId) {
-      setConvId(initialId);
-      chatApi.listMessages(initialId).then((p) => setMessages(p.items.map(fromServer))).catch(() => setError('대화를 불러오지 못했어요.'));
-    }
-  }, [visible, initialId, startFull]);
-
-  useEffect(() => () => cancelRef.current?.(), []);
+  useEffect(() => () => {
+    operation.current?.abort();
+    cancelRef.current?.();
+  }, []);
 
   const patchAssistant = useCallback((clientRequestId: string, patch: Partial<UiMessage> | ((m: UiMessage) => Partial<UiMessage>)) => {
     setMessages((list) => list.map((m) => (m.role === 'ASSISTANT' && m.clientRequestId === clientRequestId ? { ...m, ...(typeof patch === 'function' ? patch(m) : patch) } : m)));
   }, []);
 
-  /** 연결이 끊겼을 때: 서버에 저장된 상태를 조회해 이어 붙인다 */
-  const recover = useCallback(async (cid: string, clientRequestId: string, assistantId?: string) => {
-    for (let i = 0; i < 10; i++) {
-      try {
-        let m: ChatMessage | undefined;
-        if (assistantId) m = await chatApi.getMessage(cid, assistantId);
-        else m = (await chatApi.listMessages(cid, { clientRequestId })).items.find((x) => x.role === 'ASSISTANT');
-        if (m && m.status !== 'STREAMING') {
-          patchAssistant(clientRequestId, { content: m.content, status: (m.status as UiMessage['status']) ?? 'COMPLETED', sources: m.sources, finishReason: m.finishReason, messageId: m.messageId });
-          return;
+  const recover = useCallback(async (target: PendingAssistant, controller: AbortController) => {
+    const { conversationId, clientRequestId, assistantId } = target;
+    const resolved = await chatApi.pollAssistant(conversationId, clientRequestId, assistantId, controller.signal, (m) => {
+      patchAssistant(clientRequestId, (current) => ({
+        ...fromServer(m), key: current.key,
+        content: chatApi.isAssistantPending(m.status) && !m.content ? current.content : m.content,
+      }));
+    });
+    if (controller.signal.aborted) return;
+    operation.current = null;
+    setPending(resolved ? null : target);
+    setBusy(false);
+    setError(resolved ? null : '답변 상태를 확인하지 못했어요.');
+    if (resolved) void qc.invalidateQueries({ queryKey: ['conversations'] });
+  }, [patchAssistant, qc]);
+
+  // 저장된 대화를 열 때도 서버가 생성 중이면 입력을 잠근다.
+  useEffect(() => {
+    if (!initialId) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    const { signal } = controller;
+    void Promise.all([chatApi.getConversation(initialId, signal), chatApi.listMessages(initialId, {}, signal)])
+      .then(async ([conversation, page]) => {
+        const assistantId = conversation.activeAssistantMessageId;
+        const active = assistantId
+          ? page.items.find((m) => m.messageId === assistantId) ?? await chatApi.getMessage(initialId, assistantId, signal)
+          : undefined;
+        if (signal.aborted) return;
+        setSavedScope(conversation.scope);
+        setMessages([...page.items, ...(active && !page.items.some((m) => m.messageId === active.messageId) ? [active] : [])].map(fromServer));
+        if (active && chatApi.isAssistantPending(active.status)) {
+          await recover({ conversationId: initialId, clientRequestId: active.clientRequestId, assistantId: active.messageId }, controller);
+        } else {
+          operation.current = null;
+          setBusy(false);
         }
-        await new Promise((r) => setTimeout(r, m?.nextPollAfterMs ?? 1500));
-      } catch {
-        break;
-      }
-    }
-    patchAssistant(clientRequestId, { status: 'INCOMPLETE' });
-  }, [patchAssistant]);
+      })
+      .catch(() => {
+        if (signal.aborted) return;
+        operation.current = null;
+        setBusy(false);
+        setError('대화를 불러오지 못했어요. 닫았다가 다시 열어 주세요.');
+      });
+    return () => controller.abort();
+  }, [initialId, recover]);
+
+  const locked = busy || !!pending || (!!initialId && !savedScope);
+  const refreshStatus = () => {
+    if (!pending || operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError(null);
+    void recover(pending, controller);
+  };
 
   const send = useCallback(async (raw: string, retryOfMessageId: string | null = null) => {
     const content = raw.trim();
-    if (!content || busy) return;
+    if (!content || locked || operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
     setError(null);
     setBusy(true);
     const clientRequestId = newIdempotencyKey();
     setMessages((l) => [
       ...l,
       { key: `u-${clientRequestId}`, role: 'USER', content, clientRequestId },
-      { key: `a-${clientRequestId}`, role: 'ASSISTANT', content: '', status: 'STREAMING', clientRequestId, retryOfMessageId },
+      { key: `a-${clientRequestId}`, role: 'ASSISTANT', content: '', status: 'GENERATING', clientRequestId },
     ]);
     setText('');
     Keyboard.dismiss();
@@ -147,13 +190,16 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
     let cid = convId;
     try {
       if (!cid) {
-        const c = await chatApi.createConversation(context.scope, createKeyRef.current);
+        const c = await chatApi.createConversation(savedScope ?? context.scope, createKeyRef.current);
+        if (controller.signal.aborted) return;
         cid = c.conversationId;
         setConvId(cid);
         createKeyRef.current = newIdempotencyKey();
         qc.invalidateQueries({ queryKey: ['conversations'] });
       }
     } catch {
+      if (controller.signal.aborted) return;
+      operation.current = null;
       setMessages((l) => l.filter((m) => m.clientRequestId !== clientRequestId));
       setText(content); // 입력 유지 → 같은 키로 다시 시도
       setError('대화를 시작하지 못했어요. 다시 보내 주세요.');
@@ -166,11 +212,28 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
       onMeta: (e) => { assistantId = e.assistantMessageId; patchAssistant(clientRequestId, { messageId: e.assistantMessageId }); },
       onDelta: (e) => patchAssistant(clientRequestId, (m) => ({ content: m.content + e.text })),
       onSources: (e) => patchAssistant(clientRequestId, { sources: e.sources }),
-      onDone: (e) => { patchAssistant(clientRequestId, { status: 'COMPLETED', finishReason: e.finishReason }); setBusy(false); qc.invalidateQueries({ queryKey: ['conversations'] }); },
-      onServerError: () => { patchAssistant(clientRequestId, { status: 'FAILED' }); setBusy(false); },
-      onDisconnected: async () => { await recover(cid!, clientRequestId, assistantId); setBusy(false); },
+      onDone: (e) => {
+        patchAssistant(clientRequestId, { status: 'COMPLETED', finishReason: e.finishReason });
+        operation.current = null;
+        setBusy(false);
+        void qc.invalidateQueries({ queryKey: ['conversations'] });
+      },
+      onServerError: (e) => {
+        patchAssistant(clientRequestId, { status: e.status ?? 'FAILED', messageId: e.assistantMessageId ?? assistantId, retryable: e.retryable });
+        operation.current = null;
+        setBusy(false);
+        void qc.invalidateQueries({ queryKey: ['conversations'] });
+      },
+      onRejected: (message) => {
+        operation.current = null;
+        setMessages((list) => list.filter((m) => m.clientRequestId !== clientRequestId));
+        setText(content);
+        setBusy(false);
+        setError(message);
+      },
+      onDisconnected: () => { void recover({ conversationId: cid!, clientRequestId, assistantId }, controller); },
     });
-  }, [busy, convId, context.scope, patchAssistant, qc, recover]);
+  }, [locked, convId, savedScope, context.scope, patchAssistant, qc, recover]);
 
   const openSource = (s: ChatSource) => {
     if (s.availability !== 'AVAILABLE') return;
@@ -180,7 +243,10 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
   };
 
   const newChat = () => {
+    operation.current?.abort();
+    operation.current = null;
     cancelRef.current?.();
+    setPending(null);
     setConvId(undefined);
     setMessages([]);
     setBusy(false);
@@ -226,7 +292,7 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
         {messages.length === 0 ? (
           <>
             {context.suggestions.map((q) => (
-              <Pressable key={q} style={styles.suggest} onPress={() => send(q)} disabled={busy}>
+              <Pressable key={q} style={styles.suggest} onPress={() => send(q)} disabled={locked}>
                 <Text style={font.body}>{q}</Text>
               </Pressable>
             ))}
@@ -243,10 +309,11 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
         ) : (
           <AssistantBlock key={m.key} m={m} onOpenSource={openSource} onRetry={() => {
             const q = [...messages].reverse().find((x) => x.role === 'USER' && x.clientRequestId === m.clientRequestId)?.content;
-            if (q) send(q, m.messageId ?? null);
+            if (q && m.messageId) send(q, m.messageId);
           }} />
         )))}
         {error ? <Text style={[font.caption, { color: colors.danger, marginTop: space.sm }]}>{error}</Text> : null}
+        {pending && !busy ? <Pressable onPress={refreshStatus}><Text style={styles.link}>답변 상태 다시 확인</Text></Pressable> : null}
         </Pressable>
       </ScrollView>
 
@@ -260,11 +327,10 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
             style={styles.input}
             multiline
           />
-          <Pressable onPress={() => send(text)} disabled={busy || !text.trim()} style={{ opacity: busy || !text.trim() ? 0.3 : 1, padding: space.sm }}>
+          <Pressable accessibilityLabel="질문 보내기" onPress={() => send(text)} disabled={locked || !text.trim()} style={{ opacity: locked || !text.trim() ? 0.3 : 1, padding: space.sm }}>
             {busy ? <ActivityIndicator color={colors.textSub} /> : <Text style={{ fontSize: 18, color: colors.text }}>↑</Text>}
           </Pressable>
         </View>
-        {/* TODO: 크레딧/일일 질문 한도 표시 — PLAN-02 chat.limitsConfigured가 true일 때만 */}
       </View>
     </KeyboardAvoidingView>
   );
@@ -290,7 +356,7 @@ export function AgentSheet({ visible, onClose: onCloseProp, context, conversatio
 }
 
 function AssistantBlock({ m, onOpenSource, onRetry }: { m: UiMessage; onOpenSource: (s: ChatSource) => void; onRetry: () => void }) {
-  const streaming = m.status === 'STREAMING';
+  const streaming = chatApi.isAssistantPending(m.status);
   const noGround = m.status === 'COMPLETED' && m.finishReason === 'INSUFFICIENT_EVIDENCE';
   const sources = m.sources ?? [];
   return (
@@ -301,7 +367,7 @@ function AssistantBlock({ m, onOpenSource, onRetry }: { m: UiMessage; onOpenSour
       {m.status === 'INCOMPLETE' || m.status === 'FAILED' ? (
         <View style={styles.warn}>
           <Text style={font.sub}>{m.status === 'FAILED' ? '답변을 만들지 못했어요.' : '답변이 중간에 끊겼어요.'}</Text>
-          <Pressable onPress={onRetry}><Text style={styles.link}>다시 요청</Text></Pressable>
+          {m.retryable && m.messageId ? <Pressable onPress={onRetry}><Text style={styles.link}>다시 요청</Text></Pressable> : null}
         </View>
       ) : null}
       {!streaming && sources.length ? (

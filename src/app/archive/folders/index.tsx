@@ -2,7 +2,6 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { displayFolderName } from '@/api/archive';
 import { AgentSheet } from '@/components/AgentSheet';
 import { AppScreen, Breadcrumb } from '@/components/AppShell';
 import { FolderNameModal } from '@/components/FolderNameModal';
@@ -38,7 +37,7 @@ export default function FoldersScreen() {
           <Pressable style={styles.folder} onPress={() => router.push({ pathname: '/archive/folders/[folderId]', params: { folderId: item.folderId } })}>
             <View style={styles.icon}><Text style={{ fontSize: 18, color: colors.textSub }}>▢</Text></View>
             <View style={{ flex: 1, marginLeft: space.md }}>
-              <Text style={font.h3}>{displayFolderName(item.name)}</Text>
+              <Text style={font.h3}>{item.name}</Text>
               <Text style={[font.caption, { marginTop: 2 }]}>{item.recordCount}개 기록</Text>
             </View>
             <Text style={{ fontSize: 18, color: colors.textSub }}>›</Text>
