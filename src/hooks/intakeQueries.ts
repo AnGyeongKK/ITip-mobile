@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import * as intake from '@/api/intake';
+import { useCollectStore } from '@/features/analysis/collectStore';
 
 /** 화면이 보이고 앱이 포그라운드일 때만 true */
 function useScreenActive() {
@@ -24,7 +25,22 @@ function useScreenActive() {
 export const useImportResource = () => useMutation({ mutationFn: (url: string) => intake.importResource(url) });
 
 export const useCreateBatch = () =>
-  useMutation({ mutationFn: (v: { videoIds: string[]; playlistId?: string | null }) => intake.createBatch(v.videoIds, v.playlistId ?? null) });
+  useMutation({
+    mutationFn: (v: { videoIds: string[]; playlistId?: string | null }) => intake.createBatch(v.videoIds, v.playlistId ?? null),
+    onSuccess: (batch) => {
+      const store = useCollectStore.getState();
+      store.rememberBatch(batch.batchId);
+      if (store.hydrated && !store.blocked && batch.items.some((i) => i.action === 'COLLECT_CAPTIONS')) {
+        store.allowBatch(batch.batchId);
+      }
+    },
+  });
+
+export const useRetryJob = () =>
+  useMutation({
+    mutationFn: (v: { jobId: string; idempotencyKey: string }) => intake.retryJob(v.jobId, v.idempotencyKey),
+    onSuccess: (job) => useCollectStore.getState().rememberBatch(job.batchId),
+  });
 
 export const usePlaylistItems = (playlistId: string) =>
   useInfiniteQuery({
@@ -34,8 +50,6 @@ export const usePlaylistItems = (playlistId: string) =>
     getNextPageParam: (last) => (last.hasNext ? last.nextCursor ?? undefined : undefined),
     enabled: !!playlistId,
   });
-
-export const useQuota = () => useQuery({ queryKey: ['quota'], queryFn: intake.getAnalysisQuota, staleTime: 0 });
 
 /** 서버가 준 nextPollAfterMs로 폴링하고, 화면이 안 보이거나 백그라운드면 멈춘다. 복귀하면 바로 다시 조회한다. */
 export function useBatch(batchId: string) {

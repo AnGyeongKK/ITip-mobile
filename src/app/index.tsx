@@ -1,8 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { ApiError } from '@/api/client';
-import { formatDuration, getJob } from '@/api/intake';
+import { getJob } from '@/api/intake';
 import type { Video } from '@/api/types';
 import { AppScreen } from '@/components/AppShell';
 import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
@@ -10,8 +9,9 @@ import { RecordCard } from '@/components/RecordCard';
 import { Button, ErrorView, LoadingView, SectionTitle } from '@/components/ui';
 import { VideoInfoCard, VideoThumb } from '@/components/VideoInfoCard';
 import { parseYoutubeUrl } from '@/features/analysis/parseYoutubeUrl';
+import { useCollectStore } from '@/features/analysis/collectStore';
 import { useHome } from '@/hooks/queries';
-import { useCreateBatch, useImportResource, useQuota } from '@/hooks/intakeQueries';
+import { useBatch, useCreateBatch, useImportResource } from '@/hooks/intakeQueries';
 import { formatRange } from '@/lib/format';
 import { openResult } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
@@ -21,9 +21,10 @@ type Candidate = { videoId: string; metadata: Video | null };
 export default function Home() {
   const { sharedUrl, ts } = useLocalSearchParams<{ sharedUrl?: string; ts?: string }>();
   const home = useHome();
-  const quota = useQuota();
   const importResource = useImportResource();
   const createBatch = useCreateBatch();
+  const savedBatchId = useCollectStore((s) => s.hydrated ? s.batchId : null);
+  const savedBatch = useBatch(savedBatchId ?? '');
 
   const [text, setText] = useState('');
   const [issue, setIssue] = useState<Issue | null>(null);
@@ -46,6 +47,7 @@ export default function Home() {
       if (r.existing.status === 'COMPLETED' && r.existing.analysisId) return openResult(r.existing.analysisId);
       if (r.existing.status === 'PROCESSING' && r.existing.jobId) {
         const job = await getJob(r.existing.jobId);
+        useCollectStore.getState().rememberBatch(job.batchId);
         return router.push({ pathname: '/analyze/[batchId]', params: { batchId: job.batchId } });
       }
       const d = r.metadata?.durationMs;
@@ -73,17 +75,11 @@ export default function Home() {
       const b = await createBatch.mutateAsync({ videoIds: [candidate.videoId] });
       router.push({ pathname: '/analyze/[batchId]', params: { batchId: b.batchId } });
     } catch (e) {
-      if (e instanceof ApiError && e.isLimit) {
-        quota.refetch();
-        setIssue({ code: 'ANALYSIS_QUOTA_EXCEEDED' });
-      } else {
-        setIssue(toIssue(e));
-      }
+      setIssue(toIssue(e));
     }
   };
 
   const cr = home.data?.continueReading;
-  const needMs = candidate?.metadata?.durationMs ?? null;
   return (
     <AppScreen onAgent={() => router.push('/agent')}>
       <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
@@ -100,10 +96,15 @@ export default function Home() {
           onSubmitEditing={() => submit(text)}
         />
         <Button title="링크 확인" onPress={() => submit(text)} loading={importResource.isPending} disabled={!text.trim()} />
+        {savedBatchId ? (
+          <Button title="이전 분석 확인" variant="secondary" loading={savedBatch.isPending && savedBatch.isFetching}
+            onPress={() => router.push({ pathname: '/analyze/[batchId]', params: { batchId: savedBatchId } })}
+            style={{ marginTop: space.sm }} />
+        ) : null}
 
         {issue ? (
           <View style={{ marginTop: space.lg }}>
-            <IntakeError issue={issue} remainingMs={quota.data?.remainingMs} neededMs={needMs} onClose={() => setIssue(null)} />
+            <IntakeError issue={issue} onClose={() => setIssue(null)} />
           </View>
         ) : null}
 
@@ -117,11 +118,7 @@ export default function Home() {
             ) : (
               <Text style={font.sub}>영상 정보를 불러오지 못했어요. 한국어 자막 여부는 수집한 뒤에 확인돼요.</Text>
             )}
-            {quota.data ? (
-              <Text style={[font.caption, { marginTop: space.sm }]}>
-                남은 분석 시간 {formatDuration(quota.data.remainingMs)}{needMs ? ` · 이 영상 ${formatDuration(needMs)}` : ''}
-              </Text>
-            ) : null}
+
             <Button title="이 영상 분석하기" onPress={start} loading={createBatch.isPending} style={{ marginTop: space.md }} />
           </View>
         ) : null}

@@ -1,6 +1,5 @@
-// A 파트 API (명세: IMPORT-01/02, ANALYSIS-01/02/07/08/09, UPLOAD-01~03, PLAN-02)
+// A 파트 API (명세: IMPORT-01/02, ANALYSIS-01/02/07/08/09, UPLOAD-01~03)
 // 시연에서는 인증 헤더를 보내지 않는다. 로그인이 들어오면 client.ts의 setAccessTokenProvider로 붙는다.
-//    limitMs/usedMs/reservedMs/remainingMs 필드명은 가정이다.
 import { ApiError, cleanParams, delay, newIdempotencyKey, request, USE_MOCK } from './client';
 import { records } from './mock/db';
 import type { Id, Video } from './types';
@@ -70,7 +69,6 @@ export interface CreatedBatch {
   batchId: Id;
   status: BatchStatusCode;
   items: CreatedBatchItem[];
-  quota: { limitMs: number; usedMs: number; reservedMs: number; remainingMs: number }; // ⚠️ 시간 기준 가정 필드 (명세는 개수 기준)
   selectionSummary: { uniqueVideoCount: number; newAnalysisCount: number; existingResultCount: number; existingJobCount: number };
 }
 
@@ -96,6 +94,10 @@ export interface Batch {
 }
 
 export const isBatchDone = (b: Pick<Batch, 'status'>) => b.status === 'COMPLETED' || b.status === 'PARTIALLY_FAILED' || b.status === 'FAILED';
+export function canCollectCaption(item: BatchItem): item is BatchItem & { uploadDeadlineAt: string } {
+  return item.status === 'AWAITING_UPLOAD' && !item.jobId && item.uploadDeadlineAt !== null &&
+    Date.parse(item.uploadDeadlineAt) > Date.now();
+}
 
 /** 진행 화면의 4단계(영상 확인 → 확인 완료 → 내용 확인 → AI 정리). 서버가 주는 값이 아니라 앱이 항목 상태로 매핑한 추측. */
 export function overallStep(b: Batch): 1 | 2 | 3 | 4 {
@@ -118,6 +120,8 @@ export interface Job {
   nextPollAfterMs: number | null;
   video: Video | null;
 }
+
+export type RetriedJob = Pick<Job, 'jobId' | 'batchId' | 'status'> & { previousJobId: Id; statusUrl: string };
 
 // ---------- UPLOAD / ANALYSIS-01 / ANALYSIS-09 ----------
 export interface CaptionSegment { startMs: number; endMs: number; text: string }
@@ -149,8 +153,6 @@ const mockVideo = (videoId: string, i = 0): Video => ({
   thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
   durationMs: (10 + i * 7) * 60_000, channelImageUrl: null, publishedAt: null,
 });
-const MOCK_QUOTA = { limitMs: 3_600_000, usedMs: 1_500_000 }; // 무료 1시간 중 25분 사용
-let mockReservedMs = 0;
 const NONE: Existing = { status: 'NONE', analysisId: null, recordId: null, jobId: null };
 
 // ---------- API ----------
@@ -192,7 +194,7 @@ export async function getPlaylistItems(playlistId: string, cursor?: string): Pro
   });
 }
 
-/** ANALYSIS-07. 한도 부족은 429(ANALYSIS_QUOTA_EXCEEDED)로 배치 전체가 거절된다. 새 사용자 동작마다 새 키를 쓴다. */
+/** ANALYSIS-07. 새 사용자 동작마다 새 키를 쓴다. */
 export async function createBatch(videoIds: string[], playlistId: string | null = null): Promise<CreatedBatch> {
   const idempotencyKey = newIdempotencyKey();
   if (USE_MOCK) {
@@ -202,12 +204,7 @@ export async function createBatch(videoIds: string[], playlistId: string | null 
     const items: MockItem[] = unique.map((videoId, i) => ({
       itemId: `i-${i + 1}`, videoId, existing: records.some((r) => r.video.videoId === videoId), submittedAt: null, failure: null,
     }));
-    const durationOf = (id: string) => records.find((r) => r.video.videoId === id)?.video.durationMs ?? 10 * 60_000;
     const newItems = items.filter((i) => !i.existing);
-    const needMs = newItems.reduce((sum, i) => sum + durationOf(i.videoId), 0); // 기존 결과는 차감 없음
-    const remainingMs = MOCK_QUOTA.limitMs - MOCK_QUOTA.usedMs - mockReservedMs;
-    if (needMs > remainingMs) throw new ApiError(429, 'ANALYSIS_QUOTA_EXCEEDED', '남은 분석 시간을 초과했어요.');
-    mockReservedMs += needMs;
     const batchId = `b-${idempotencyKey.slice(0, 8)}`;
     mockBatches.set(batchId, { createdAt: created, items });
     return {
@@ -221,7 +218,6 @@ export async function createBatch(videoIds: string[], playlistId: string | null 
           uploadDeadlineAt: m.existing ? null : new Date(created + 30 * 60_000).toISOString(),
         } as CreatedBatchItem;
       }),
-      quota: { limitMs: MOCK_QUOTA.limitMs, usedMs: MOCK_QUOTA.usedMs, reservedMs: mockReservedMs, remainingMs: remainingMs - needMs },
       selectionSummary: { uniqueVideoCount: unique.length, newAnalysisCount: newItems.length, existingResultCount: unique.length - newItems.length, existingJobCount: 0 },
     };
   }
@@ -278,6 +274,14 @@ export async function getJob(jobId: Id): Promise<Job> {
   return request<Job>({ method: 'GET', url: `/api/v1/analysis-jobs/${jobId}` });
 }
 
+export async function retryJob(jobId: Id, idempotencyKey: string): Promise<RetriedJob> {
+  if (USE_MOCK) throw new ApiError(409, 'JOB_NOT_RETRYABLE', '현재 재시도할 수 없는 분석이에요.');
+  return request({
+    method: 'POST', url: `/api/v1/analysis-jobs/${jobId}/retries`, data: {},
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+}
+
 /** UPLOAD-01 서명 URL 발급 */
 async function issueUpload(batchId: Id, itemId: Id, videoId: string, sizeBytes: number): Promise<UploadTicket> {
   return request<UploadTicket>({
@@ -298,11 +302,11 @@ async function putToGcs(t: UploadTicket, body: string): Promise<void> {
 }
 
 /** ANALYSIS-01 분석 접수 (uploadId만 전달) */
-async function submitJob(batchId: Id, itemId: Id, uploadId: Id): Promise<{ jobId: Id }> {
+async function submitJob(batchId: Id, itemId: Id, uploadId: Id, idempotencyKey: string): Promise<{ jobId: Id }> {
   return request<{ jobId: Id }>({
     method: 'POST', url: '/api/v1/analysis-jobs',
     data: { batchId, batchItemId: itemId, uploadId },
-    headers: { 'Idempotency-Key': newIdempotencyKey() },
+    headers: { 'Idempotency-Key': idempotencyKey },
   });
 }
 
@@ -324,7 +328,13 @@ export async function submitCaptions(batchId: Id, itemId: Id, caption: CaptionFi
     ticket = await issueUpload(batchId, itemId, caption.videoId, sizeBytes);
     await putToGcs(ticket, body);
   }
-  return submitJob(batchId, itemId, ticket.uploadId);
+  const key = newIdempotencyKey();
+  try {
+    return await submitJob(batchId, itemId, ticket.uploadId, key);
+  } catch (e) {
+    if (!(e instanceof ApiError && (e.isNetwork || (e.status ?? 0) >= 500))) throw e;
+    return submitJob(batchId, itemId, ticket.uploadId, key);
+  }
 }
 
 /** ANALYSIS-09 수집·업로드 실패 보고 (AWAITING_UPLOAD 항목만. 취소 기능이 아니다) */
@@ -340,34 +350,6 @@ export async function reportCollectFail(batchId: Id, itemId: Id, code: Collectio
   });
 }
 
-// ---------- PLAN-02 영상 시간 기준 한도 ----------
-export interface AnalysisQuota {
-  limitMs: number;
-  usedMs: number;
-  reservedMs: number;
-  remainingMs: number; // max(0, limit - used - reserved)
-  resetsAt: string | null;
-}
-
-/** UI 안내용이고 최종 검사는 서버가 한다. 시간 필드가 없으면 null(미확인)이며 0이나 무제한으로 해석하지 않는다. */
-export async function getAnalysisQuota(): Promise<AnalysisQuota | null> {
-  if (USE_MOCK) {
-    await delay(300);
-    const remainingMs = MOCK_QUOTA.limitMs - MOCK_QUOTA.usedMs - mockReservedMs;
-    return { limitMs: MOCK_QUOTA.limitMs, usedMs: MOCK_QUOTA.usedMs, reservedMs: mockReservedMs, remainingMs, resetsAt: '2026-11-30T15:00:00Z' };
-  }
-  // ⚠️ analysis.limitMs 등은 가정 필드. 백엔드 확정 후 교체
-  const data = await request<{ analysis?: Partial<AnalysisQuota> }>({ method: 'GET', url: '/api/v1/users/me/entitlements' });
-  const a = data.analysis;
-  if (a?.limitMs == null || a.usedMs == null || a.reservedMs == null) return null;
-  return {
-    limitMs: a.limitMs, usedMs: a.usedMs, reservedMs: a.reservedMs,
-    remainingMs: a.remainingMs ?? Math.max(0, a.limitMs - a.usedMs - a.reservedMs),
-    resetsAt: a.resetsAt ?? null,
-  };
-}
-
-/** 한도 안내 문구용 (예: "12분", "1시간 5분") */
 export function formatDuration(ms: number): string {
   const m = Math.floor(ms / 60_000);
   return m >= 60 ? (m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`) : `${m}분`;

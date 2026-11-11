@@ -1,14 +1,19 @@
 import { useEffect } from 'react';
-import type { Batch } from '@/api/intake';
+import { canCollectCaption, type Batch } from '@/api/intake';
+import { useCollectStore } from './collectStore';
 import { enqueueCollection } from './runPipeline';
 
-/** 배치에 AWAITING_UPLOAD 항목이 있으면 이 기기에서 자막 수집을 시작한다. */
 export function useCaptionCollection(batch: Batch | undefined) {
+  const allowed = useCollectStore((s) =>
+    s.hydrated && !s.blocked && !!batch && s.allowedBatches.includes(batch.batchId));
   useEffect(() => {
-    if (!batch) return;
+    if (!batch || !allowed) return;
     const todo = batch.items
-      .filter((i) => i.status === 'AWAITING_UPLOAD')
-      .map((i) => ({ itemId: i.itemId, videoId: i.videoId, durationMs: i.video?.durationMs ?? null }));
+      .filter(canCollectCaption)
+      .map((i) => ({
+        itemId: i.itemId, videoId: i.videoId, durationMs: i.video?.durationMs ?? null,
+        uploadDeadlineAt: i.uploadDeadlineAt,
+      }));
     if (todo.length) enqueueCollection(batch.batchId, todo);
-  }, [batch]);
+  }, [batch, allowed]);
 }

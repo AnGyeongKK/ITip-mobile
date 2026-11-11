@@ -6,7 +6,7 @@ import { formatDuration, type PlaylistItem } from '@/api/intake';
 import { AppScreen } from '@/components/AppShell';
 import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
 import { Button, EmptyView, LoadingView } from '@/components/ui';
-import { useCreateBatch, usePlaylistItems, useQuota } from '@/hooks/intakeQueries';
+import { useCreateBatch, usePlaylistItems } from '@/hooks/intakeQueries';
 import { openResult } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
 
@@ -27,7 +27,6 @@ function note(i: PlaylistItem): string {
 export default function PlaylistScreen() {
   const { playlistId } = useLocalSearchParams<{ playlistId: string }>();
   const q = usePlaylistItems(playlistId);
-  const quota = useQuota();
   const createBatch = useCreateBatch();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [issue, setIssue] = useState<Issue | null>(null);
@@ -40,9 +39,13 @@ export default function PlaylistScreen() {
   }, [q.data]);
   const selectable = items.filter(isSelectable);
   const allOn = selectable.length > 0 && selectable.every((i) => selected.has(i.videoId));
-  const needMs = items.filter((i) => selected.has(i.videoId)).reduce((sum, i) => sum + (i.durationMs ?? 0), 0);
 
-  const toggle = (id: string) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id: string) => setSelected((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
 
   const start = async () => {
     setIssue(null);
@@ -50,12 +53,7 @@ export default function PlaylistScreen() {
       const b = await createBatch.mutateAsync({ videoIds: [...selected], playlistId: head?.playlistId ?? playlistId });
       router.replace({ pathname: '/analyze/[batchId]', params: { batchId: b.batchId } });
     } catch (e) {
-      if (e instanceof ApiError && e.isLimit) {
-        quota.refetch();
-        setIssue({ code: 'ANALYSIS_QUOTA_EXCEEDED' });
-      } else {
-        setIssue(toIssue(e));
-      }
+      setIssue(toIssue(e));
     }
   };
 
@@ -118,14 +116,10 @@ export default function PlaylistScreen() {
         <View style={s.bar}>
           {issue ? (
             <View style={{ marginBottom: space.md }}>
-              <IntakeError issue={issue} remainingMs={quota.data?.remainingMs} neededMs={needMs || null} onClose={() => setIssue(null)} />
+              <IntakeError issue={issue} onClose={() => setIssue(null)} />
             </View>
           ) : null}
-          {quota.data ? (
-            <Text style={[font.caption, { marginBottom: space.sm }]}>
-              남은 분석 시간 {formatDuration(quota.data.remainingMs)}{needMs ? ` · 선택한 영상 ${formatDuration(needMs)}` : ''}
-            </Text>
-          ) : null}
+
           <Button title={`${selected.size}개 분석하기`} onPress={start} disabled={selected.size === 0} loading={createBatch.isPending} />
         </View>
       </View>
