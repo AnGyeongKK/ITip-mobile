@@ -120,7 +120,9 @@ export default function Analyze() {
   if (q.isError || !batch) return <AppScreen><ErrorView error={q.error} onRetry={q.refetch} /></AppScreen>;
 
   const step = overallStep(batch);
-  const canResume = batch.items.some(canCollectCaption) && (blocked || !allowed);
+  const hasUploadToResume = batch.items.some(canCollectCaption);
+  const collecting = batch.items.some((item) => !!phases[itemKey(batch.batchId, item.itemId)]);
+  const canResume = hasUploadToResume && (blocked || !allowed);
   const rateLimited = batch.items.some((i) => i.error?.code === 'COLLECTION_RATE_LIMITED');
 
   async function resumeCollection() {
@@ -151,8 +153,10 @@ export default function Analyze() {
           <Text style={[font.sub, { marginTop: space.xs }]}>자막 수집이 제한됐어요. 서버에 접수한 분석은 계속 진행돼요.</Text>
         ) : canResume ? (
           <Text style={[font.sub, { marginTop: space.xs }]}>아직 자막을 보내지 않은 영상이 있어요.</Text>
-        ) : batch.counts.awaitingUpload > 0 ? (
+        ) : hasUploadToResume || collecting ? (
           <Text style={[font.sub, { marginTop: space.xs }]}>자막을 이 기기에서 수집해요. 수집이 끝날 때까지 앱을 켜 두세요.</Text>
+        ) : batch.counts.awaitingUpload > 0 ? (
+          <Text style={[font.sub, { marginTop: space.xs }]}>자막 업로드 시간이 지났어요. 필요한 영상은 새로 분석을 요청해 주세요.</Text>
         ) : !done ? (
           <Text style={[font.sub, { marginTop: space.xs }]}>이 화면을 벗어나도 분석은 계속돼요.</Text>
         ) : null}
