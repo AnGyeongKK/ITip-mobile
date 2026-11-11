@@ -17,6 +17,7 @@ function toCaptionError(e: unknown): CaptionError {
     case 'NO_CAPTION': return new CaptionError('KOREAN_CAPTION_NOT_FOUND');
     case 'VIDEO_UNAVAILABLE': return new CaptionError('VIDEO_UNAVAILABLE');
     case 'RATE_LIMITED': return new CaptionError('COLLECTION_RATE_LIMITED');
+    case 'INITIALIZATION_FAILED': return new CaptionError('UPLOAD_FAILED');
     default: return new CaptionError('UPLOAD_FAILED', true); // 일시 오류로 보고 한 번 다시 시도
   }
 }
@@ -32,20 +33,25 @@ export function parseJson3(raw: string, videoId: string, durationMs: number | nu
     throw new CaptionError('UPLOAD_FAILED', true);
   }
   const segments: CaptionSegment[] = [];
-  let prev = '';
+  if (!Array.isArray(data?.events)) throw new CaptionError('UPLOAD_FAILED');
   for (const ev of data.events ?? []) {
-    if (ev.tStartMs == null || !ev.segs) continue;
-    const text = ev.segs.map((s) => s.utf8 ?? '').join('').replace(/\s+/g, ' ').trim();
-    if (!text || text === prev) continue; // 빈 줄·연속 중복 제거
-    const startMs = Math.max(0, Math.round(ev.tStartMs));
-    let endMs = startMs + Math.max(Math.round(ev.dDurationMs ?? 0), 1);
-    if (durationMs != null) endMs = Math.min(endMs, durationMs);
-    if (endMs <= startMs) continue;
+    if (!Array.isArray(ev?.segs)) continue;
+    const text = ev.segs.map((s) => s.utf8 ?? '').join('');
+    if (!text.trim()) continue;
+    const startMs = ev.tStartMs;
+    const duration = ev.dDurationMs;
+    if (startMs == null || duration == null || !Number.isSafeInteger(startMs) ||
+      !Number.isSafeInteger(duration) || startMs < 0 || duration <= 0) {
+      throw new CaptionError('UPLOAD_FAILED');
+    }
+    const endMs = startMs + duration;
+    if (!Number.isSafeInteger(endMs) || (durationMs != null && endMs > durationMs) ||
+      startMs < (segments.at(-1)?.startMs ?? 0)) {
+      throw new CaptionError('UPLOAD_FAILED');
+    }
     segments.push({ startMs, endMs, text });
-    prev = text;
   }
   if (segments.length === 0) throw new CaptionError('KOREAN_CAPTION_NOT_FOUND');
-  segments.sort((a, b) => a.startMs - b.startMs);
   return { videoId, language: 'ko', segments };
 }
 
