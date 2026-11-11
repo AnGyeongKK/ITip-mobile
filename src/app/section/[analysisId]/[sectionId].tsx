@@ -6,7 +6,7 @@ import { AgentSheet } from '@/components/AgentSheet';
 import { AppScreen, Breadcrumb } from '@/components/AppShell';
 import { PlayerModal } from '@/components/PlayerModal';
 import { Button, Chip, ErrorView, LoadingView, OriginBadge } from '@/components/ui';
-import { useSaveReadingPosition, useSection } from '@/hooks/queries';
+import { RELATED_VIDEOS_ENABLED, useSaveReadingPosition, useSection } from '@/hooks/queries';
 import { formatDate, formatMs, formatRange } from '@/lib/format';
 import { agentForSection } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
@@ -95,6 +95,7 @@ export default function SectionScreen() {
         <Button title={`${formatMs(s.startMs)}부터 원본 영상 보기 ↗`} variant="secondary" onPress={() => setPlayAt(s.startMs)} style={{ marginTop: space.sm }} />
         <Text style={[font.caption, { marginTop: space.sm }]}>제공된 영상 내용을 바탕으로 정리했어요. 실제 발언과 자세한 내용은 원본에서 확인해주세요.</Text>
 
+        {RELATED_VIDEOS_ENABLED ? <>
         <Text style={[font.h2, { marginTop: space.xl }]}>관련 내용을 더 찾아볼까요?</Text>
         <Text style={[font.sub, { marginTop: space.xs }]}>ITip Agent가 이 구간과 관련된 YouTube 영상을 찾아드려요.</Text>
         <Pressable
@@ -105,13 +106,14 @@ export default function SectionScreen() {
           <Text style={font.h3}>관련 영상 찾아보기</Text>
           <Text style={{ fontSize: 18, color: colors.textSub }}>›</Text>
         </Pressable>
+        </> : null}
       </ScrollView>
 
       <PlayerModal videoId={s.videoId} startMs={playAt} title={s.title} onClose={() => setPlayAt(null)} />
       <AgentSheet
         visible={agentOpen}
         onClose={() => setAgentOpen(false)}
-        context={agentForSection(s.recordId, `${formatMs(s.startMs)} · ${s.title}`, s.video.title, formatRange(s.startMs, s.endMs))}
+        context={agentForSection(s.recordId, s.sectionId, `${formatMs(s.startMs)} · ${s.title}`, s.video.title, formatRange(s.startMs, s.endMs))}
       />
     </AppScreen>
   );

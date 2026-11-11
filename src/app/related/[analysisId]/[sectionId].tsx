@@ -1,19 +1,26 @@
 // RELATED-VIDEO-AGENT (피그마 11/06) · ANALYSIS-06 구간 관련 영상 추천
 // '이 영상도 분석하기'는 A의 분석 흐름으로 넘긴다 (자동 분석 아님)
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Recommendation } from '@/api/types';
 import { VideoThumb } from '@/components/VideoInfoCard';
 import { Button, EmptyView, ErrorView, LoadingView } from '@/components/ui';
-import { useRecommendations, useSection } from '@/hooks/queries';
+import { RELATED_VIDEOS_ENABLED, useRecommendations, useSection } from '@/hooks/queries';
 import { formatMs } from '@/lib/format';
 import { startAnalysisFromVideo } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
 
 export default function RelatedScreen() {
   const { analysisId, sectionId } = useLocalSearchParams<{ analysisId: string; sectionId: string }>();
+  if (!RELATED_VIDEOS_ENABLED) {
+    return <Redirect href={{ pathname: '/section/[analysisId]/[sectionId]', params: { analysisId, sectionId } }} />;
+  }
+  return <Recommendations analysisId={analysisId} sectionId={sectionId} />;
+}
+
+function Recommendations({ analysisId, sectionId }: { analysisId: string; sectionId: string }) {
   const section = useSection(analysisId, sectionId);
   const recs = useRecommendations(analysisId, sectionId);
 
@@ -48,7 +55,7 @@ export default function RelatedScreen() {
             <Text style={[font.title, { marginTop: space.xl }]}>관련 영상을 찾았어요</Text>
             <Text style={[font.sub, { marginTop: space.xs, marginBottom: space.lg }]}>선택한 구간의 내용을 더 살펴볼 수 있는 영상이에요.</Text>
             {recs.data.items.map((v) => <RecCard key={v.videoId} v={v} />)}
-            <Text style={font.caption}>'이 영상도 분석하기'는 분석 단계로 이동해요. 자동으로 분석되지 않아요.</Text>
+            <Text style={font.caption}>‘이 영상도 분석하기’는 분석 단계로 이동해요. 자동으로 분석되지 않아요.</Text>
           </>
         )}
       </ScrollView>

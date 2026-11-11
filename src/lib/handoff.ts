@@ -2,10 +2,7 @@
 import { router } from 'expo-router';
 import type { AgentContext } from '../components/AgentSheet';
 
-/**
- * 추천 영상 '이 영상도 분석하기' → A의 분석 흐름(IMPORT-01부터)으로 넘긴다.
- * TODO(A와 합의): A의 영상 추가 라우트가 정해지면 pathname을 바꾼다. 지금은 홈으로 URL을 넘긴다.
- */
+/** 영상 ID를 홈의 링크 확인(IMPORT-01)으로 넘긴다. */
 export function startAnalysisFromVideo(videoId: string) {
   router.push({ pathname: '/', params: { sharedUrl: `https://www.youtube.com/watch?v=${videoId}` } });
 }
@@ -17,15 +14,16 @@ export function openResult(analysisId: string) {
 
 // ---------- 에이전트 범위별 문구 (피그마 11/06) ----------
 export const agentForVideo = (recordId: string, title: string): AgentContext => ({
-  scope: { type: 'FILTERED', recordId, keywordIds: [], folderId: null, q: null },
+  scope: { type: 'RECORD', recordId },
   scopeTitle: title,
   suggestions: ['이 영상 핵심을 다시 설명해줘', '실무에서는 어떻게 활용할 수 있어?', '가장 중요한 부분이 어디야?'],
   intro: '현재 영상의 요약과 분석을 참고하고 있어요. 궁금한 내용을 물어보세요.',
   placeholder: '이 영상에 대해 물어보세요',
 });
 
-export const agentForSection = (recordId: string, sectionLabel: string, videoTitle: string, rangeLabel?: string): AgentContext => ({
+export const agentForSection = (recordId: string, sectionId: string, sectionLabel: string, videoTitle: string, rangeLabel?: string): AgentContext => ({
   ...agentForVideo(recordId, sectionLabel),
+  scope: { type: 'RECORD', recordId, focusSectionId: sectionId },
   scopeSub: videoTitle,
   suggestions: ['이 구간 핵심만 설명해줘', '앞 구간과 어떤 차이가 있어?', '실무에서 적용하는 예시를 알려줘'],
   intro: `선택한 ${rangeLabel ?? '이'} 구간을 우선 참고해요. 필요하면 전체 영상의 맥락도 함께 살펴볼게요.`,

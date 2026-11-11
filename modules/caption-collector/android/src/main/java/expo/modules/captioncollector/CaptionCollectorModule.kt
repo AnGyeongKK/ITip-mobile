@@ -1,5 +1,6 @@
 package expo.modules.captioncollector
 
+import android.util.Log
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import expo.modules.kotlin.exception.CodedException
@@ -31,8 +32,15 @@ class CaptionCollectorModule : Module() {
       YoutubeDL.getInstance().init(context())
       initialized = true
     } catch (e: Exception) {
-      throw CodedException("FAILED", e.message, e)
+      throw initializationFailed(e)
+    } catch (e: LinkageError) {
+      throw initializationFailed(e)
     }
+  }
+
+  private fun initializationFailed(error: Throwable): CodedException {
+    Log.e("CaptionCollector", "yt-dlp initialization failed (${error.javaClass.simpleName})")
+    return CodedException("INITIALIZATION_FAILED", "Caption collector initialization failed", null)
   }
 
   private fun update(): String {

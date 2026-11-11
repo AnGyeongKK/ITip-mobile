@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import * as analysis from '../api/analysis';
 import * as archive from '../api/archive';
 import * as chat from '../api/chat';
-import type { ChatScope, RecordQuery, ResultTab } from '../api/types';
+import type { ChatScope, CursorPage, Folder, RecordQuery, ResultTab } from '../api/types';
 
 export const qk = {
   analysis: (id: string) => ['analysis', id] as const,
@@ -28,12 +28,14 @@ export const useAnalysis = (analysisId: string) =>
 export const useSection = (analysisId: string, sectionId: string) =>
   useQuery({ queryKey: qk.section(analysisId, sectionId), queryFn: () => analysis.getSection(analysisId, sectionId), enabled: !!analysisId && !!sectionId });
 
+export const RELATED_VIDEOS_ENABLED = false;
+
 /** 추천은 PENDING이면 5초 뒤 다시 조회. 실패해도 본문 화면에는 영향을 주지 않는다. */
 export const useRecommendations = (analysisId: string, sectionId: string) =>
   useQuery({
     queryKey: qk.recs(analysisId, sectionId),
     queryFn: () => analysis.getRecommendations(analysisId, sectionId),
-    enabled: !!analysisId && !!sectionId,
+    enabled: RELATED_VIDEOS_ENABLED && !!analysisId && !!sectionId,
     retry: 1,
     refetchInterval: (q) => (q.state.data?.status === 'PENDING' ? 5000 : false),
   });
@@ -109,8 +111,19 @@ export function useDeleteFolder() {
   return useMutation({ mutationFn: (folderId: string) => archive.deleteFolder(folderId), onSuccess: () => inv() });
 }
 export function useAddRecordsToFolder() {
+  const qc = useQueryClient();
   const inv = useInvalidateFolders();
-  return useMutation({ mutationFn: (v: { folderId: string; recordIds: string[] }) => archive.addRecordsToFolder(v.folderId, v.recordIds), onSuccess: (_d, v) => inv(v.folderId) });
+  return useMutation({
+    mutationFn: (v: { folderId: string; recordIds: string[] }) => archive.addRecordsToFolder(v.folderId, v.recordIds),
+    onSuccess: ({ folderId, recordCount }) => {
+      qc.setQueryData<Folder>(qk.folder(folderId), (folder) => folder && { ...folder, recordCount });
+      qc.setQueryData<CursorPage<Folder>>(qk.folders, (page) => page && {
+        ...page,
+        items: page.items.map((folder) => folder.folderId === folderId ? { ...folder, recordCount } : folder),
+      });
+      inv(folderId);
+    },
+  });
 }
 export function useRemoveRecordFromFolder() {
   const inv = useInvalidateFolders();

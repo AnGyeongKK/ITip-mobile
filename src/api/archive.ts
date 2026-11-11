@@ -8,31 +8,22 @@ import type {
 const PAGE = 20;
 
 // ---------------- 폴더 이름 규칙 ----------------
-// 11/5 회의: 공백은 허용하되 서버로 넘길 때는 '-'로 바꾼다. 최대 길이·중복 규칙은 백엔드 '폴더 이름 규칙/중복 검사 API'가 최종 기준.
-// TODO(백엔드 확정 후): 아래 두 값과 변환 방식을 서버 규칙에 맞춰 수정
 export const FOLDER_NAME_MAX = 20;
-export const SPACE_TO_DASH = true;
 
 export function normalizeFolderName(input: string) {
-  return input.trim().replace(/\s+/g, ' ');
+  return input.trim();
 }
-export function toServerFolderName(input: string) {
-  const n = normalizeFolderName(input);
-  return SPACE_TO_DASH ? n.replace(/ /g, '-') : n;
-}
-/** 화면 표시용: 서버가 '-'로 저장했다면 다시 공백으로 보여준다. */
-export function displayFolderName(serverName: string) {
-  return SPACE_TO_DASH ? serverName.replace(/-/g, ' ') : serverName;
-}
-/** 중복 비교용 키: 화면 표기('AI 공부')와 서버 표기('AI-공부')를 같은 것으로 본다. 영문 대소문자도 무시. */
 export function folderNameKey(name: string) {
-  return normalizeFolderName(displayFolderName(name)).toLowerCase();
+  return normalizeFolderName(name).replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+export function folderNameLength(name: string) {
+  return Array.from(normalizeFolderName(name)).length;
 }
 /** 클라이언트 1차 검증. 서버 응답(400/409)이 항상 최종 기준. */
 export function validateFolderName(input: string, existing: Folder[], editingId?: string): string | null {
   const n = normalizeFolderName(input);
   if (!n) return '폴더 이름을 입력해 주세요.';
-  if (n.length > FOLDER_NAME_MAX) return `폴더 이름은 ${FOLDER_NAME_MAX}자까지 쓸 수 있어요.`;
+  if (folderNameLength(n) > FOLDER_NAME_MAX) return `폴더 이름은 ${FOLDER_NAME_MAX}자까지 쓸 수 있어요.`;
   if (existing.some((f) => f.folderId !== editingId && folderNameKey(f.name) === folderNameKey(n))) return '같은 이름의 폴더가 이미 있어요.';
   return null;
 }
@@ -122,7 +113,7 @@ export async function getFolder(folderId: string): Promise<Folder> {
 }
 
 export async function createFolder(name: string, idempotencyKey = newIdempotencyKey()): Promise<Folder> {
-  const serverName = toServerFolderName(name);
+  const serverName = normalizeFolderName(name);
   if (USE_MOCK) {
     await delay();
     if (db.folders.some((f) => folderNameKey(f.name) === folderNameKey(name))) throw new ApiError(409, 'FOLDER_NAME_DUPLICATED', '같은 이름의 폴더가 이미 있어요.');
@@ -135,7 +126,7 @@ export async function createFolder(name: string, idempotencyKey = newIdempotency
 }
 
 export async function renameFolder(folderId: string, name: string): Promise<Folder> {
-  const serverName = toServerFolderName(name);
+  const serverName = normalizeFolderName(name);
   if (USE_MOCK) {
     await delay();
     const f = db.folders.find((x) => x.folderId === folderId);
