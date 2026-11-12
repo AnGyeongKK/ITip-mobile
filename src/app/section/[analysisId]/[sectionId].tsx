@@ -1,15 +1,15 @@
-// SEGMENT-DETAIL (피그마 11/06) · ANALYSIS-05
+// SEGMENT-DETAIL (피그마 '디자인 확정 화면' 11/11) · ANALYSIS-05
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AgentSheet } from '@/components/AgentSheet';
-import { AppScreen, Breadcrumb } from '@/components/AppShell';
+import { AppScreen } from '@/components/AppShell';
 import { PlayerModal } from '@/components/PlayerModal';
-import { Button, Chip, ErrorView, LoadingView, OriginBadge } from '@/components/ui';
+import { Button, ErrorView, Icon, LoadingView, OriginBadge } from '@/components/ui';
 import { RELATED_VIDEOS_ENABLED, useSaveReadingPosition, useSection } from '@/hooks/queries';
-import { formatDate, formatMs, formatRange } from '@/lib/format';
+import { formatMs, formatRange } from '@/lib/format';
 import { agentForSection } from '@/lib/handoff';
-import { colors, font, radius, space } from '@/theme/tokens';
+import { colors, radius, space, typography } from '@/theme/tokens';
 
 export default function SectionScreen() {
   const { analysisId, sectionId } = useLocalSearchParams<{ analysisId: string; sectionId: string }>();
@@ -24,89 +24,117 @@ export default function SectionScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.data?.sectionId]);
 
-  if (q.isPending) return <AppScreen><LoadingView /></AppScreen>;
-  if (q.isError) return <AppScreen><ErrorView error={q.error} onRetry={q.refetch} /></AppScreen>;
+  // 바로 들어온 경우(이어서 보기 등) 뒤로가기는 분석 결과로
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace({ pathname: '/result/[analysisId]', params: { analysisId } }));
+
+  if (q.isPending) return <AppScreen back onBack={goBack}><LoadingView /></AppScreen>;
+  if (q.isError) return <AppScreen back onBack={goBack}><ErrorView error={q.error} onRetry={q.refetch} /></AppScreen>;
   const s = q.data;
   const d = s.detail;
-  const sourceTips = d.applicationTips.filter((t) => t.origin === 'SOURCE');
-  const aiTips = d.applicationTips.filter((t) => t.origin === 'AI_SUGGESTION');
+  const tips = [...d.applicationTips.filter((t) => t.origin === 'SOURCE'), ...d.applicationTips.filter((t) => t.origin === 'AI_SUGGESTION')];
+  const hasTipBox = d.recommendedTools.length > 0 || d.usageKeywords.length > 0 || tips.length > 0;
 
   return (
-    <AppScreen onAgent={() => setAgentOpen(true)}>
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 120 }}>
-        <Breadcrumb
-          label="‹ 분석 결과로 돌아가기"
-          onPress={() => (router.canGoBack() ? router.back() : router.replace({ pathname: '/result/[analysisId]', params: { analysisId } }))}
-        />
-        <Text style={[font.caption, { marginTop: space.sm }]}>{formatRange(s.startMs, s.endMs)} · 구간 요약</Text>
-        <Text style={[font.title, { marginTop: space.xs }]}>{s.title}</Text>
-
-        <View style={[styles.rowBetween, { marginTop: space.lg }]}>
-          <Text style={[font.sub, { fontWeight: '700', color: colors.text }]}>{s.video.channelName}</Text>
-          <Text style={font.caption}>{formatDate(s.video.publishedAt)}</Text>
-        </View>
-        <Text style={[font.sub, { marginTop: 2 }]}>{s.videoOneLine}</Text>
-
-        <View style={styles.panel}>
-          <Text style={font.h3}>이 구간의 핵심</Text>
-          <Text style={[font.body, { fontWeight: '700', marginTop: space.sm }]}>{d.takeaway}</Text>
-          <Text style={[font.sub, { marginTop: space.xs }]}>{d.explanation}</Text>
+    <AppScreen back onBack={goBack} onAgent={() => setAgentOpen(true)}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+        <View style={styles.head}>
+          {/* 구간 시간: 누르면 이 구간부터 앱 안에서 재생 */}
+          <Pressable onPress={() => setPlayAt(s.startMs)} style={styles.rangeChip} accessibilityRole="button" accessibilityLabel={`${formatMs(s.startMs)}부터 원본 영상 보기`}>
+            <Text style={[typography.button12, { color: colors.primary }]}>{formatRange(s.startMs, s.endMs)}</Text>
+          </Pressable>
+          <Text style={typography.heading20}>{s.title}</Text>
         </View>
 
-        <View style={styles.panel}>
-          <Text style={font.h3}>실무 적용 팁</Text>
-          {d.recommendedTools.length ? (
-            <>
-              <Text style={[font.sub, styles.label]}>추천 툴</Text>
-              {d.recommendedTools.map((t) => <Text key={t.name} style={[font.body, { marginTop: 4 }]}>{t.name} — {t.reason}</Text>)}
-              <Text style={[font.caption, { marginTop: space.xs }]}>실무 적용을 위한 추천 툴이며, 원본 영상에서 사용한 툴로 확인된 것은 아니에요.</Text>
-            </>
-          ) : null}
-          {d.usageKeywords.length ? (
-            <>
-              <Text style={[font.sub, styles.label]}>활용 키워드</Text>
-              <View style={styles.wrap}>{d.usageKeywords.map((k) => <Chip key={k} label={k} />)}</View>
-            </>
-          ) : null}
-          {[...sourceTips, ...aiTips].map((t, i) => (
-            <View key={i} style={{ marginTop: space.md }}>
-              <OriginBadge origin={t.origin} />
-              <Text style={[font.body, { marginTop: 4 }]}>{t.text}</Text>
+        <View style={styles.body}>
+          <View style={styles.coreBox}>
+            <Text style={[typography.body14Semibold, { color: colors.primaryDeep }]}>이 구간의 핵심</Text>
+            <Text style={[typography.subtitle16Bold, { marginTop: 2 }]}>{d.takeaway}</Text>
+            {d.explanation ? <Text style={[typography.body14Medium, { color: colors.textBody, marginTop: space.xs }]}>{d.explanation}</Text> : null}
+          </View>
+
+          {hasTipBox ? (
+            <View style={styles.tipBox}>
+              <Text style={typography.subtitle16Bold}>실무 적용 TIP</Text>
+
+              {d.recommendedTools.length ? (
+                <View style={{ gap: space.md }}>
+                  <Text style={styles.label}>추천 툴</Text>
+                  {d.recommendedTools.map((t) => (
+                    <View key={t.name} style={styles.toolCard}>
+                      <Text style={typography.body14Semibold}>{t.name}</Text>
+                      {t.reason ? <Text style={[typography.body13Medium, { color: colors.textDisabled }]}>{t.reason}</Text> : null}
+                    </View>
+                  ))}
+                  <Text style={[typography.caption12, { color: colors.textDisabled }]}>실무 적용을 위한 추천 툴이며, 원본 영상에서 사용한 툴로 확인된 것은 아니에요.</Text>
+                </View>
+              ) : null}
+
+              {d.usageKeywords.length ? (
+                <>
+                  {d.recommendedTools.length ? <View style={styles.divider} /> : null}
+                  <View style={{ gap: 6 }}>
+                    <Text style={styles.label}>활용 키워드</Text>
+                    <View style={styles.wrap}>
+                      {d.usageKeywords.map((k) => (
+                        <View key={k} style={styles.kwChip}><Text style={[typography.button12, { color: colors.icon }]}># {k}</Text></View>
+                      ))}
+                    </View>
+                  </View>
+                </>
+              ) : null}
+
+              {tips.length ? (
+                <>
+                  {d.recommendedTools.length || d.usageKeywords.length ? <View style={styles.divider} /> : null}
+                  <View style={{ gap: space.md }}>
+                    {tips.map((t, i) => (
+                      <View key={i} style={styles.tipRow}>
+                        <Icon source={require('../../../../assets/icons/tip-note.svg')} width={16} height={16} style={{ marginTop: 3 }} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          {/* [영상] / [AI 제안] 구분 (origin 필드) */}
+                          <OriginBadge origin={t.origin} />
+                          <Text style={typography.body14Medium}>{t.text}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : null}
             </View>
-          ))}
+          ) : null}
         </View>
 
         {d.examples.length ? (
-          <>
-            <Text style={[font.h2, { marginTop: space.xl }]}>이렇게 활용해볼 수 있어요</Text>
-            <View style={styles.example}>
-              <Text style={[font.sub, { fontWeight: '700', color: colors.text }]}>실무 적용 예시</Text>
+          <View style={{ marginTop: space.xl }}>
+            <Text style={styles.blockTitle}>이렇게 활용해 볼 수 있어요</Text>
+            <View style={styles.exampleCard}>
+              <Text style={[typography.body14Semibold, { color: colors.primaryDeep }]}>실무 적용 예시</Text>
               {d.examples.map((e, i) => (
-                <View key={i} style={{ marginTop: space.sm }}>
-                  <Text style={font.body}>{e.text}</Text>
-                  <Text style={font.caption}>{e.origin === 'AI_SUGGESTION' ? '영상 속 발언이 아닌, 실습을 위한 예시예요.' : '영상에서 소개한 사례예요.'}</Text>
+                <View key={i} style={{ gap: space.xs }}>
+                  <Text style={typography.body14Medium}>{e.text}</Text>
+                  <Text style={[typography.caption12, { color: colors.textDisabled }]}>{e.origin === 'AI_SUGGESTION' ? '영상 속 발언이 아닌, 실습을 위한 예시예요.' : '영상에서 소개한 사례예요.'}</Text>
                 </View>
               ))}
             </View>
-          </>
+          </View>
         ) : null}
 
-        <Text style={[font.caption, { marginTop: space.xl }]}>YouTube · 원본 영상의 {formatMs(s.startMs)} 구간</Text>
-        <Button title={`${formatMs(s.startMs)}부터 원본 영상 보기 ↗`} variant="secondary" onPress={() => setPlayAt(s.startMs)} style={{ marginTop: space.sm }} />
-        <Text style={[font.caption, { marginTop: space.sm }]}>제공된 영상 내용을 바탕으로 정리했어요. 실제 발언과 자세한 내용은 원본에서 확인해주세요.</Text>
+        <Text style={[typography.caption12, styles.disclaimer]}>제공된 영상 내용을 바탕으로 정리했어요. 실제 발언과 자세한 내용은 원본에서 확인해주세요.</Text>
 
-        {RELATED_VIDEOS_ENABLED ? <>
-        <Text style={[font.h2, { marginTop: space.xl }]}>관련 내용을 더 찾아볼까요?</Text>
-        <Text style={[font.sub, { marginTop: space.xs }]}>ITip Agent가 이 구간과 관련된 YouTube 영상을 찾아드려요.</Text>
-        <Pressable
-          style={styles.related}
-          onPress={() => router.push({ pathname: '/related/[analysisId]/[sectionId]', params: { analysisId, sectionId } })}
-        >
-          {/* TODO: '· 2 Credits' 표시는 크레딧 정책이 API에 생기면 추가 */}
-          <Text style={font.h3}>관련 영상 찾아보기</Text>
-          <Text style={{ fontSize: 18, color: colors.textSub }}>›</Text>
-        </Pressable>
-        </> : null}
+        {RELATED_VIDEOS_ENABLED ? (
+          <View style={styles.related}>
+            <View style={{ paddingHorizontal: space.sm, gap: space.xs }}>
+              <Text style={typography.subtitle16Bold}>관련 내용을 더 찾아볼까요?</Text>
+              <Text style={[typography.body14Medium, { color: colors.textSub }]}>이 구간과 관련된 유익한 YouTube 영상을 찾아드려요.</Text>
+            </View>
+            {/* '2 Credits' 칩은 크레딧 정책이 API에 생기면 추가 */}
+            <Button
+              title="관련 영상 찾아보기"
+              onPress={() => router.push({ pathname: '/related/[analysisId]/[sectionId]', params: { analysisId, sectionId } })}
+              style={{ backgroundColor: colors.primaryStrong }}
+            />
+          </View>
+        ) : null}
       </ScrollView>
 
       <PlayerModal videoId={s.videoId} startMs={playAt} title={s.title} onClose={() => setPlayAt(null)} />
@@ -120,10 +148,19 @@ export default function SectionScreen() {
 }
 
 const styles = StyleSheet.create({
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  panel: { backgroundColor: colors.surface, borderRadius: radius.md, padding: space.lg, marginTop: space.lg },
-  label: { fontWeight: '700', color: colors.text, marginTop: space.md },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: space.sm },
-  example: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: space.lg, marginTop: space.md },
-  related: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: space.lg, borderRadius: radius.md, backgroundColor: colors.surface, marginTop: space.md },
+  head: { paddingHorizontal: space.xl, paddingVertical: space.md, gap: 6, alignItems: 'flex-start' },
+  rangeChip: { borderWidth: 1, borderColor: colors.primaryLine, borderRadius: 20, paddingHorizontal: space.sm, paddingVertical: 2 },
+  body: { paddingHorizontal: space.lg, gap: 20, marginTop: space.sm },
+  coreBox: { backgroundColor: colors.primarySoft, borderRadius: radius.lg, paddingTop: space.md, paddingBottom: 20, paddingHorizontal: space.lg },
+  tipBox: { backgroundColor: colors.surface, borderRadius: radius.lg, paddingTop: space.lg, paddingBottom: space.xl, paddingHorizontal: space.lg, gap: 20 },
+  label: { ...typography.body14Semibold, color: colors.textBody },
+  toolCard: { backgroundColor: colors.bg, borderRadius: radius.md, padding: space.sm, alignItems: 'flex-start' },
+  divider: { height: 1, backgroundColor: colors.divider },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },
+  kwChip: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
+  tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  blockTitle: { ...typography.subtitle16Bold, paddingHorizontal: space.xl, paddingVertical: 10 },
+  exampleCard: { marginHorizontal: space.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingTop: 20, paddingBottom: space.xl, paddingHorizontal: space.lg, gap: space.md },
+  disclaimer: { color: colors.textMuted, paddingHorizontal: space.xl, marginTop: space.xl },
+  related: { marginTop: space.xl, marginHorizontal: 14, gap: 14 },
 });
