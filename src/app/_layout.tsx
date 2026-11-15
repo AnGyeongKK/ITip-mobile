@@ -5,6 +5,7 @@ import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { ShareReceiver } from '@/features/analysis/ShareReceiver';
+import { LoginGate } from '@/features/auth/LoginGate';
 import { colors, fontFamily } from '@/theme/tokens';
 
 export default function RootLayout() {
@@ -30,6 +31,7 @@ export default function RootLayout() {
       <QueryClientProvider client={client}>
         <StatusBar style="dark" />
         <ShareReceiver />
+        <LoginGate />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
       </QueryClientProvider>
     </ShareIntentProvider>
