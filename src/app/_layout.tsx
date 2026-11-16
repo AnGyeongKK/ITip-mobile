@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { ShareReceiver } from '@/features/analysis/ShareReceiver';
 import { LoginGate } from '@/features/auth/LoginGate';
+import { PushNotifications } from '@/features/notifications/PushNotifications';
 import { colors, fontFamily } from '@/theme/tokens';
 
 export default function RootLayout() {
@@ -31,6 +32,7 @@ export default function RootLayout() {
       <QueryClientProvider client={client}>
         <StatusBar style="dark" />
         <ShareReceiver />
+        <PushNotifications />
         <LoginGate />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
       </QueryClientProvider>
