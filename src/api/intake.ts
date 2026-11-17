@@ -1,4 +1,4 @@
-// A 파트 API (명세: IMPORT-01/02, ANALYSIS-01/02/07/08/09, UPLOAD-01~03)
+// A 파트 API (명세: IMPORT-01/02, ANALYSIS-01/02/07/08/09, UPLOAD-01~03, 수동 재시도)
 // 시연에서는 인증 헤더를 보내지 않는다. 로그인이 들어오면 client.ts의 setAccessTokenProvider로 붙는다.
 import { ApiError, cleanParams, delay, newIdempotencyKey, request, USE_MOCK } from './client';
 import { records } from './mock/db';
@@ -99,7 +99,14 @@ export function canCollectCaption(item: BatchItem): item is BatchItem & { upload
     Date.parse(item.uploadDeadlineAt) > Date.now();
 }
 
-/** 진행 화면의 4단계(영상 확인 → 확인 완료 → 내용 확인 → AI 정리). 서버가 주는 값이 아니라 앱이 항목 상태로 매핑한 추측. */
+/** 이 오류가 붙은 영상은 같은 입력을 자동으로 다시 분석하지 않고, 새로 자막을 수집해야 한다. */
+const RECOLLECT_CODES = ['CAPTION_REUPLOAD_REQUIRED', 'CAPTION_UPLOAD_EXPIRED', 'COLLECTION_RATE_LIMITED'];
+/** '자막 다시 수집하기'를 보여줄 항목: 업로드 기한이 지났거나, 원본 자막 유실·수집 제한으로 실패한 영상. retryable이 false여도 표시한다. */
+export const needsRecollect = (item: BatchItem) =>
+  (item.status === 'AWAITING_UPLOAD' && !canCollectCaption(item)) ||
+  (item.status === 'FAILED' && RECOLLECT_CODES.includes(item.error?.code ?? ''));
+
+/** 진행 화면의 4단계(영상 확인 → 확인 완료 → 내용 확인 → AI 정리). 서버가 주는 값이 아니라 앱이 항목 상태로 매핑한 추측. (6단계에서 제거) */
 export function overallStep(b: Batch): 1 | 2 | 3 | 4 {
   const rank = (it: BatchItem): 1 | 2 | 3 | 4 =>
     it.status === 'AWAITING_UPLOAD' ? 1 : it.status === 'QUEUED' || it.status === 'RETRY_WAIT' ? 2 : it.stage === 'VALIDATING' ? 3 : 4;
@@ -122,6 +129,14 @@ export interface Job {
 }
 
 export type RetriedJob = Pick<Job, 'jobId' | 'batchId' | 'status'> & { previousJobId: Id; statusUrl: string };
+
+/** 수동 재시도 응답을 화면 이동 경로로 바꾼다. 202는 새 배치로, 200(완료 결과 재사용)은 결과로 간다. */
+export type RetryOutcome = { kind: 'RESULT'; analysisId: Id } | { kind: 'BATCH'; batchId: Id };
+export async function resolveRetry(r: RetriedJob): Promise<RetryOutcome> {
+  if (r.status !== 'COMPLETED') return { kind: 'BATCH', batchId: r.batchId };
+  const job = await getJob(r.jobId); // 결과 ID는 작업 조회로 확인한다
+  return job.analysisId ? { kind: 'RESULT', analysisId: job.analysisId } : { kind: 'BATCH', batchId: job.batchId || r.batchId };
+}
 
 // ---------- UPLOAD / ANALYSIS-01 / ANALYSIS-09 ----------
 export interface CaptionSegment { startMs: number; endMs: number; text: string }
@@ -146,8 +161,54 @@ export class UploadError extends Error {
 }
 
 // ---------- mock ----------
-interface MockItem { itemId: string; videoId: string; existing: boolean; submittedAt: number | null; failure: CollectionFailureCode | null }
-const mockBatches = new Map<string, { createdAt: number; items: MockItem[] }>();
+// 영상 ID의 앞부분으로 시나리오를 고른다 (mock 모드에서만 동작). 링크 예: https://youtu.be/retryfail001
+//   reupload…   분석 실패, 원본 자막 유실(CAPTION_REUPLOAD_REQUIRED, retryable:false)
+//   retryfail…  분석 실패(retryable:true) → 수동 재시도 202(새 배치)
+//   retry200…   분석 실패(retryable:true) → 수동 재시도 200(완료 결과 재사용)
+//   retry410…   분석 실패(retryable:true) → 수동 재시도 410(자막 재수집 필요)
+//   failx…      분석 실패(retryable:false)
+//   missing…    링크 조회 404(접근 불가)   lookupfail…  링크 조회 500(일시 장애)
+//   inprogress… 링크 조회 시 이미 분석 중(PROCESSING)
+interface MockItem {
+  itemId: string;
+  videoId: string;
+  existing: boolean;
+  submittedAt: number | null;
+  failure: CollectionFailureCode | null;
+  forceSuccess?: boolean;
+}
+interface MockBatch { createdAt: number; items: MockItem[] }
+const mockBatches = new Map<string, MockBatch>();
+
+const SEED_PROCESSING = 'b-processing-1'; // 재생목록·링크에서 '이미 분석 중'으로 보이는 배치
+const mockJobId = (batchId: string, itemId: string) => `j-${batchId}~${itemId}`;
+const parseMockJob = (jobId: string) => {
+  const m = /^j-(.+)~(.+)$/.exec(jobId);
+  return m ? { batchId: m[1], itemId: m[2] } : null;
+};
+function mockBatch(batchId: string): MockBatch | undefined {
+  if (batchId === SEED_PROCESSING && !mockBatches.has(batchId)) {
+    const now = Date.now();
+    mockBatches.set(batchId, {
+      createdAt: now,
+      items: [{ itemId: 'i-1', videoId: 'pl-processing1', existing: false, submittedAt: now, failure: null }],
+    });
+  }
+  return mockBatches.get(batchId);
+}
+
+type Scenario = 'ok' | 'reupload' | 'retryfail' | 'retry200' | 'retry410' | 'failx';
+const scenarioOf = (videoId: string): Scenario =>
+  (['reupload', 'retryfail', 'retry200', 'retry410', 'failx'] as const).find((p) => videoId.startsWith(p)) ?? 'ok';
+const RETRYABLE_ERROR: ItemError = { code: 'ANALYSIS_FAILED', message: '분석 중 문제가 생겼어요.', retryable: true };
+const FAILURES: Record<Exclude<Scenario, 'ok'>, ItemError> = {
+  reupload: { code: 'CAPTION_REUPLOAD_REQUIRED', message: '자막 파일을 읽을 수 없어요.', retryable: false },
+  retryfail: RETRYABLE_ERROR,
+  retry200: RETRYABLE_ERROR,
+  retry410: RETRYABLE_ERROR,
+  failx: { code: 'ANALYSIS_FAILED', message: '분석에 실패했어요.', retryable: false },
+};
+
 const mockVideo = (videoId: string, i = 0): Video => ({
   videoId, title: `예시 영상 ${videoId}`, channelName: '예시 채널',
   thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
@@ -155,20 +216,55 @@ const mockVideo = (videoId: string, i = 0): Video => ({
 });
 const NONE: Existing = { status: 'NONE', analysisId: null, recordId: null, jobId: null };
 
+/** mock 항목의 현재 상태를 시간 경과로 계산한다. */
+function deriveItem(batchId: string, b: MockBatch, m: MockItem, now: number): BatchItem {
+  const rec = records.find((r) => r.video.videoId === m.videoId);
+  const base: BatchItem = {
+    itemId: m.itemId, videoId: m.videoId, status: 'AWAITING_UPLOAD', jobId: null, analysisId: null, recordId: null,
+    error: null, video: rec?.video ?? mockVideo(m.videoId), stage: null, uploadDeadlineAt: null,
+  };
+  if (m.existing) return { ...base, status: 'COMPLETED', analysisId: rec?.analysisId ?? null, recordId: rec?.recordId ?? null };
+  if (m.failure) return { ...base, status: 'FAILED', error: { code: m.failure, message: '분석할 수 없는 영상이에요.', retryable: false } };
+  if (m.submittedAt === null) return { ...base, uploadDeadlineAt: new Date(b.createdAt + 30 * 60_000).toISOString() };
+  const t = now - m.submittedAt;
+  const job: BatchItem = { ...base, jobId: mockJobId(batchId, m.itemId) };
+  const scenario = m.forceSuccess ? 'ok' : scenarioOf(m.videoId);
+  if (scenario !== 'ok' && t >= 6000) return { ...job, status: 'FAILED', error: FAILURES[scenario] };
+  if (t < 2000) return { ...job, status: 'QUEUED' };
+  if (t < 5000) return { ...job, status: 'PROCESSING', stage: 'VALIDATING' };
+  if (t < 9000) return { ...job, status: 'PROCESSING', stage: 'SUMMARIZING' };
+  if (t < 12000) return { ...job, status: 'PROCESSING', stage: 'INDEXING' };
+  if (t < 14000) return { ...job, status: 'PROCESSING', stage: 'FINISHING' };
+  return { ...job, status: 'COMPLETED', analysisId: 'a-dev-growth', recordId: 'r-dev-growth' };
+}
+
 // ---------- API ----------
 export async function importResource(url: string): Promise<YoutubeResource> {
   if (USE_MOCK) {
     await delay(500);
     const videoId = url.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{6,})/)?.[1] ?? 'unknown';
+    if (videoId.startsWith('missing')) throw new ApiError(404, 'VIDEO_UNAVAILABLE', '접근할 수 없는 영상이에요.');
+    if (videoId.startsWith('lookupfail')) throw new ApiError(500, 'INTERNAL_ERROR', '요청을 처리하지 못했어요.');
     const exist = records.find((r) => r.video.videoId === videoId);
+    const existing: Existing = exist
+      ? { status: 'COMPLETED', analysisId: exist.analysisId, recordId: exist.recordId, jobId: null }
+      : videoId.startsWith('inprogress')
+        ? { status: 'PROCESSING', analysisId: null, recordId: null, jobId: mockJobId(SEED_PROCESSING, 'i-1') }
+        : NONE;
     return {
       type: 'VIDEO', videoId, canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
       metadata: exist?.video ?? mockVideo(videoId),
-      existing: exist ? { status: 'COMPLETED', analysisId: exist.analysisId, recordId: exist.recordId, jobId: null } : NONE,
+      existing,
       captionRequirement: { language: 'ko', maxDurationMs: 3_600_000 },
     };
   }
-  return request<YoutubeResource>({ method: 'GET', url: '/api/v1/youtube-resources', params: { url } });
+  try {
+    return await request<YoutubeResource>({ method: 'GET', url: '/api/v1/youtube-resources', params: { url } });
+  } catch (e) {
+    // 이 조회의 404는 영상 접근 불가다. 다른 API의 404에는 이 문구를 쓰지 않는다.
+    if (e instanceof ApiError && e.isNotFound) throw new ApiError(404, 'VIDEO_UNAVAILABLE', '접근할 수 없는 영상이에요.', e.requestId);
+    throw e;
+  }
 }
 
 export async function getPlaylistItems(playlistId: string, cursor?: string): Promise<PlaylistPage> {
@@ -180,13 +276,16 @@ export async function getPlaylistItems(playlistId: string, cursor?: string): Pro
       durationMs: (10 + i * 7) * 60_000, eligibility, reasonCode, existing: NONE,
     });
     const first = records[0];
-    const items = page === 0
-      ? [mk('pl-aaaaaa1', 0), mk('pl-aaaaaa2', 1), mk('pl-aaaaaa3', 8, 'INELIGIBLE', 'DURATION_EXCEEDED'),
-         { ...mk(first.video.videoId, 3), title: first.video.title, existing: { status: 'COMPLETED' as const, analysisId: first.analysisId, recordId: first.recordId, jobId: null } }]
-      : [mk('pl-bbbbbb1', 0), mk('pl-bbbbbb2', 1)];
+    const items: PlaylistItem[] = page === 0
+      ? [
+          mk('pl-aaaaaa1', 0), mk('pl-aaaaaa2', 1), mk('pl-aaaaaa3', 8, 'INELIGIBLE', 'DURATION_EXCEEDED'),
+          { ...mk(first.video.videoId, 3), title: first.video.title, existing: { status: 'COMPLETED' as const, analysisId: first.analysisId, recordId: first.recordId, jobId: null } },
+          { ...mk('pl-processing1', 2), title: '분석 중인 예시 영상', existing: { status: 'PROCESSING' as const, analysisId: null, recordId: null, jobId: mockJobId(SEED_PROCESSING, 'i-1') } },
+        ]
+      : [mk('pl-bbbbbb1', 0), mk('pl-bbbbbb2', 1), mk('failx000001', 2)]; // failx…는 분석이 실패해 부분 실패 배치를 만든다
     return {
       playlistId, title: '예시 재생목록', items, nextCursor: page === 0 ? 'p2' : null, hasNext: page === 0,
-      thumbnailUrl: null, channelName: '예시 재생목록 채널', totalItemCount: 6, eligibilityCounts: null,
+      thumbnailUrl: null, channelName: '예시 재생목록 채널', totalItemCount: 8, eligibilityCounts: null,
     };
   }
   return request<PlaylistPage>({
@@ -230,27 +329,10 @@ export async function createBatch(videoIds: string[], playlistId: string | null 
 export async function getBatch(batchId: Id): Promise<Batch> {
   if (USE_MOCK) {
     await delay(250);
-    const b = mockBatches.get(batchId);
+    const b = mockBatch(batchId);
     if (!b) throw new ApiError(404, 'RESOURCE_NOT_FOUND', '요청한 항목을 찾을 수 없어요.');
     const now = Date.now();
-    const items: BatchItem[] = b.items.map((m) => {
-      const rec = records.find((r) => r.video.videoId === m.videoId);
-      const base: BatchItem = {
-        itemId: m.itemId, videoId: m.videoId, status: 'AWAITING_UPLOAD', jobId: null, analysisId: null, recordId: null,
-        error: null, video: rec?.video ?? mockVideo(m.videoId), stage: null, uploadDeadlineAt: null,
-      };
-      if (m.existing) return { ...base, status: 'COMPLETED', analysisId: rec?.analysisId ?? null, recordId: rec?.recordId ?? null };
-      if (m.failure) return { ...base, status: 'FAILED', error: { code: m.failure, message: '분석할 수 없는 영상이에요.', retryable: false } };
-      if (m.submittedAt === null) return { ...base, uploadDeadlineAt: new Date(b.createdAt + 30 * 60_000).toISOString() };
-      const t = now - m.submittedAt;
-      const job = { ...base, jobId: `j-${m.itemId}` };
-      if (t < 2000) return { ...job, status: 'QUEUED' };
-      if (t < 5000) return { ...job, status: 'PROCESSING', stage: 'VALIDATING' };
-      if (t < 9000) return { ...job, status: 'PROCESSING', stage: 'SUMMARIZING' };
-      if (t < 12000) return { ...job, status: 'PROCESSING', stage: 'INDEXING' };
-      if (t < 14000) return { ...job, status: 'PROCESSING', stage: 'FINISHING' };
-      return { ...job, status: 'COMPLETED', analysisId: 'a-dev-growth', recordId: 'r-dev-growth' };
-    });
+    const items = b.items.map((m) => deriveItem(batchId, b, m, now));
     const c = (s: ItemStatus) => items.filter((i) => i.status === s).length;
     const counts = {
       total: items.length, awaitingUpload: c('AWAITING_UPLOAD'), queued: c('QUEUED'), processing: c('PROCESSING'),
@@ -269,13 +351,48 @@ export async function getBatch(batchId: Id): Promise<Batch> {
 export async function getJob(jobId: Id): Promise<Job> {
   if (USE_MOCK) {
     await delay(250);
-    return { jobId, batchId: 'b-mock', videoId: 'unknown', status: 'PROCESSING', stage: 'SUMMARIZING', analysisId: null, recordId: null, error: null, nextPollAfterMs: 3000, video: null };
+    const ref = parseMockJob(jobId);
+    const b = ref ? mockBatch(ref.batchId) : undefined;
+    const m = ref ? b?.items.find((i) => i.itemId === ref.itemId) : undefined;
+    if (!ref || !b || !m) throw new ApiError(404, 'RESOURCE_NOT_FOUND', '요청한 항목을 찾을 수 없어요.');
+    const it = deriveItem(ref.batchId, b, m, Date.now());
+    const done = it.status === 'COMPLETED' || it.status === 'FAILED';
+    return {
+      jobId, batchId: ref.batchId, videoId: m.videoId,
+      status: (it.status === 'AWAITING_UPLOAD' ? 'QUEUED' : it.status) as Job['status'],
+      stage: it.stage, analysisId: it.analysisId, recordId: it.recordId, error: it.error,
+      nextPollAfterMs: done ? null : 3000, video: it.video,
+    };
   }
   return request<Job>({ method: 'GET', url: `/api/v1/analysis-jobs/${jobId}` });
 }
 
+/** 서버 작업 수동 재시도. 202는 새 배치, 200은 완료 결과 재사용, 410(CAPTION_REUPLOAD_REQUIRED)은 자막 재수집이 필요하다. */
 export async function retryJob(jobId: Id, idempotencyKey: string): Promise<RetriedJob> {
-  if (USE_MOCK) throw new ApiError(409, 'JOB_NOT_RETRYABLE', '현재 재시도할 수 없는 분석이에요.');
+  if (USE_MOCK) {
+    await delay(400);
+    const ref = parseMockJob(jobId);
+    const b = ref ? mockBatch(ref.batchId) : undefined;
+    const m = ref ? b?.items.find((i) => i.itemId === ref.itemId) : undefined;
+    if (!ref || !b || !m) throw new ApiError(404, 'RESOURCE_NOT_FOUND', '요청한 항목을 찾을 수 없어요.');
+    const scenario = scenarioOf(m.videoId);
+    if (m.forceSuccess || scenario === 'ok' || scenario === 'reupload' || scenario === 'failx') {
+      throw new ApiError(409, 'JOB_NOT_RETRYABLE', '현재 재시도할 수 없는 분석이에요.');
+    }
+    if (scenario === 'retry410') throw new ApiError(410, 'CAPTION_REUPLOAD_REQUIRED', '자막 파일을 읽을 수 없어요.');
+    if (scenario === 'retry200') {
+      m.forceSuccess = true; // 이미 완료된 결과를 재사용한다
+      m.submittedAt = Date.now() - 20_000;
+      return { jobId, batchId: ref.batchId, status: 'COMPLETED', previousJobId: jobId, statusUrl: `/api/v1/analysis-jobs/${jobId}` };
+    }
+    const batchId = `b-${idempotencyKey.slice(0, 8)}`; // retryfail: 202, 새 배치에서 성공한다
+    mockBatches.set(batchId, {
+      createdAt: Date.now(),
+      items: [{ itemId: 'i-1', videoId: m.videoId, existing: false, submittedAt: Date.now(), failure: null, forceSuccess: true }],
+    });
+    const newJobId = mockJobId(batchId, 'i-1');
+    return { jobId: newJobId, batchId, status: 'QUEUED', previousJobId: jobId, statusUrl: `/api/v1/analysis-jobs/${newJobId}` };
+  }
   return request({
     method: 'POST', url: `/api/v1/analysis-jobs/${jobId}/retries`, data: {},
     headers: { 'Idempotency-Key': idempotencyKey },
@@ -314,9 +431,9 @@ async function submitJob(batchId: Id, itemId: Id, uploadId: Id, idempotencyKey: 
 export async function submitCaptions(batchId: Id, itemId: Id, caption: CaptionFile): Promise<{ jobId: Id }> {
   if (USE_MOCK) {
     await delay(600);
-    const m = mockBatches.get(batchId)?.items.find((i) => i.itemId === itemId);
+    const m = mockBatch(batchId)?.items.find((i) => i.itemId === itemId);
     if (m) m.submittedAt = Date.now();
-    return { jobId: `j-${itemId}` };
+    return { jobId: mockJobId(batchId, itemId) };
   }
   const body = JSON.stringify(caption);
   const sizeBytes = new TextEncoder().encode(body).length; // UTF-8 바이트 길이
@@ -340,7 +457,7 @@ export async function submitCaptions(batchId: Id, itemId: Id, caption: CaptionFi
 /** ANALYSIS-09 수집·업로드 실패 보고 (AWAITING_UPLOAD 항목만. 취소 기능이 아니다) */
 export async function reportCollectFail(batchId: Id, itemId: Id, code: CollectionFailureCode): Promise<void> {
   if (USE_MOCK) {
-    const m = mockBatches.get(batchId)?.items.find((i) => i.itemId === itemId);
+    const m = mockBatch(batchId)?.items.find((i) => i.itemId === itemId);
     if (m) m.failure = code;
     return;
   }
