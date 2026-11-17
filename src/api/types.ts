@@ -138,7 +138,7 @@ export interface RecordDetail {
   keywords: Keyword[];
   analyzedAt: string;
   folders: { folderId: Id; name: string }[];
-  readingPosition: ReadingPosition | null;
+  readingPosition: ReadingPosition;
 }
 
 export type MatchField = 'TITLE' | 'ONE_LINE' | 'KEYWORD' | 'DETAIL' | 'TECHNOLOGY' | 'TOOL';
