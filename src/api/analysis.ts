@@ -55,7 +55,7 @@ export async function getRecord(recordId: string): Promise<RecordDetail> {
       keywords: r.keywords,
       analyzedAt: r.analyzedAt,
       folders: db.folders.filter((f) => db.folderRecords[f.folderId]?.has(recordId)).map((f) => ({ folderId: f.folderId, name: f.name })),
-      readingPosition: { tab: pos?.tab ?? 'SUMMARY', sectionId: pos?.sectionId ?? null, positionMs: null, lastViewedAt: pos?.lastViewedAt ?? null },
+      readingPosition: pos ? { tab: pos.tab, sectionId: pos.sectionId, positionMs: null, lastViewedAt: pos.lastViewedAt } : null,
     };
   }
   return request({ method: 'GET', url: `/api/v1/records/${recordId}` });
