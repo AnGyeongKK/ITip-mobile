@@ -4,6 +4,7 @@ import { AppScreen } from '@/components/AppShell';
 import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
 import { Button, EmptyView, LoadingView } from '@/components/ui';
 import { useCollectStore } from '@/features/analysis/collectStore';
+import { availableSelection, isSelectable } from '@/features/analysis/playlistSelection';
 import { useCreateBatch, usePlaylistItems } from '@/hooks/intakeQueries';
 import { openResult } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
@@ -12,7 +13,6 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 // 선택 가능: 분석 불가로 확정되지 않았고(UNKNOWN 포함), 기존 결과·진행 중인 작업이 없는 영상
-const isSelectable = (i: PlaylistItem) => i.eligibility !== 'INELIGIBLE' && i.existing.status === 'NONE';
 // 진행 상태를 열 수 있는 영상: 이미 접수돼 분석 중이고 jobId가 있는 영상
 const isInProgress = (i: PlaylistItem) => i.existing.status === 'PROCESSING' && !!i.existing.jobId;
 
@@ -35,6 +35,7 @@ export default function PlaylistScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [issue, setIssue] = useState<Issue | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null); // 진행 상태를 여는 중인 영상
+  const [conflict, setConflict] = useState<{ batchId: string | null; refreshed: boolean } | null>(null);
 
   const head = q.data?.pages[0];
   // 같은 영상이 여러 번 나와도 videoId 기준으로 1개만 둔다
@@ -54,18 +55,20 @@ export default function PlaylistScreen() {
 
   const start = async () => {
     setIssue(null);
+    setConflict(null);
     try {
       const b = await createBatch.mutateAsync({ videoIds: [...selected], playlistId: head?.playlistId ?? playlistId });
       router.replace({ pathname: '/analyze/[batchId]', params: { batchId: b.batchId } });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.code === 'STATE_CONFLICT') {
         const batchId = conflictBatchId(e);
-        if (batchId) {
-          useCollectStore.getState().requireResume(batchId);
-          return router.replace({ pathname: '/analyze/[batchId]', params: { batchId } });
+        const refreshed = await q.refetch();
+        if (refreshed.isSuccess && refreshed.data) {
+          const currentItems = refreshed.data.pages.flatMap((page) => page.items);
+          setSelected((previous) => availableSelection(previous, currentItems));
         }
-        setSelected(new Set());
-        await q.refetch();
+        setConflict({ batchId, refreshed: refreshed.isSuccess });
+        return;
       }
       setIssue(toIssue(e));
     }
@@ -164,6 +167,19 @@ export default function PlaylistScreen() {
           ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: space.lg }} color={colors.textSub} /> : undefined}
         />
         <View style={s.bar}>
+          {conflict ? (
+            <View style={{ marginBottom: space.md, gap: space.sm }}>
+              <Text style={font.caption}>
+                {conflict.refreshed
+                  ? '일부 영상이 이미 수집 대기 중이라 이번 요청은 접수되지 않았어요. 선택 가능한 영상은 선택을 유지했어요.'
+                  : '이번 요청은 접수되지 않았어요. 영상 상태를 다시 불러오지 못했으니 재시도해 주세요.'}
+              </Text>
+              {conflict.batchId ? <Button title="기존 분석 상태 보기" variant="ghost" onPress={() => {
+                useCollectStore.getState().requireResume(conflict.batchId!);
+                router.push({ pathname: '/analyze/[batchId]', params: { batchId: conflict.batchId! } });
+              }} /> : null}
+            </View>
+          ) : null}
           {issue ? (
             <View style={{ marginBottom: space.md }}>
               <IntakeError issue={issue} onClose={() => setIssue(null)} />

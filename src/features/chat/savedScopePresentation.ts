@@ -1,5 +1,9 @@
 import type { ChatScope } from '../../api/types';
 
+export function isConversationSendLocked(busy: boolean, pending: boolean, savedConversation: boolean, scope: ChatScope | undefined, status: 'AVAILABLE' | 'UNAVAILABLE' | undefined) {
+  return busy || pending || (savedConversation && (!scope || status !== 'AVAILABLE'));
+}
+
 export function savedScopePresentation(scope: ChatScope) {
   if (scope.type === 'RECORD') {
     return scope.focusSectionId

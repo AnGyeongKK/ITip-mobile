@@ -32,7 +32,7 @@ test('409 Location is propagated and only a matching relative batch URL is accep
   assert.equal(intake.conflictBatchId(new client.ApiError(409, 'OTHER', '', undefined, location)), null);
 });
 
-test('reopening an existing batch revokes automatic collection until the user resumes', () => {
+test('restored batches require resume while already authorized collection keeps running', () => {
   const create = () => (initializer) => {
     let state;
     const set = (update) => { state = { ...state, ...(typeof update === 'function' ? update(state) : update) }; };
@@ -44,11 +44,11 @@ test('reopening an existing batch revokes automatic collection until the user re
     zustand: { create },
     'zustand/middleware': { persist: (init) => init, createJSONStorage: () => ({}) },
   }).useCollectStore;
-  store.getState().allowBatch(uuid);
   store.getState().requireResume(uuid);
   assert.equal(store.getState().batchId, uuid);
   assert.equal(store.getState().allowedBatches.includes(uuid), false);
   store.getState().allowBatch(uuid);
+  store.getState().requireResume(uuid);
   assert.equal(store.getState().allowedBatches.includes(uuid), true);
 });
 
@@ -58,4 +58,23 @@ test('saved conversation scope describes its actual video, section, filtered or 
   assert.match(savedScopePresentation({ type: 'RECORD', recordId: '1', focusSectionId: '2' }).placeholder, /구간/);
   assert.match(savedScopePresentation({ type: 'FILTERED' }).intro, /선택한 범위/);
   assert.match(savedScopePresentation({ type: 'ALL' }).intro, /모든 기록/);
+});
+
+test('conflicting playlist retains only selected videos still eligible for a new batch', () => {
+  const { availableSelection } = load('src/features/analysis/playlistSelection.ts');
+  const items = [
+    { videoId: 'a', eligibility: 'ELIGIBLE', existing: { status: 'AWAITING_UPLOAD' } },
+    { videoId: 'b', eligibility: 'ELIGIBLE', existing: { status: 'NONE' } },
+    { videoId: 'c', eligibility: 'INELIGIBLE', existing: { status: 'NONE' } },
+  ];
+  assert.deepEqual([...availableSelection(new Set(['a', 'b', 'c']), items)], ['b']);
+});
+
+test('saved conversation cannot send while loading or when its scope is unavailable', () => {
+  const { isConversationSendLocked } = load('src/features/chat/savedScopePresentation.ts');
+  const scope = { type: 'RECORD', recordId: '1' };
+  assert.equal(isConversationSendLocked(false, false, true, undefined, undefined), true);
+  assert.equal(isConversationSendLocked(false, false, true, scope, 'UNAVAILABLE'), true);
+  assert.equal(isConversationSendLocked(false, false, true, scope, 'AVAILABLE'), false);
+  assert.equal(isConversationSendLocked(false, false, false, undefined, undefined), false);
 });

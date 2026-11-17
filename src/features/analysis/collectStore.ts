@@ -26,7 +26,8 @@ export const useCollectStore = create<CollectState>()(persist((set) => ({
   hydrated: false,
   allowedBatches: [],
   rememberBatch: (batchId) => set({ batchId }),
-  requireResume: (batchId) => set((s) => ({ batchId, allowedBatches: s.allowedBatches.filter((id) => id !== batchId) })),
+  // 이미 시작된 수집은 유지하고, 복구된 배치에는 새 권한을 추가하지 않는다.
+  requireResume: (batchId) => set({ batchId }),
   allowBatch: (batchId) => set((s) => ({
     blocked: false,
     allowedBatches: s.allowedBatches.includes(batchId) ? s.allowedBatches : [...s.allowedBatches, batchId],
