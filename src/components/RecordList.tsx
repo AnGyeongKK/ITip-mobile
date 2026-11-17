@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, AlertButton, FlatList, Text, View } from 'rea
 import type { RecordItem, RecordQuery } from '../api/types';
 import { useDeleteRecord, useRecords, useRemoveRecordFromFolder } from '../hooks/queries';
 import { openResult } from '../lib/handoff';
-import { colors, font, space } from '../theme/tokens';
+import { colors, space, typography } from '../theme/tokens';
 import { RecordCard } from './RecordCard';
 import { ErrorView, LoadingView } from './ui';
 
@@ -15,6 +15,7 @@ type Props = {
   /** 하단 안내 문구 (matchedCount, 보이는 개수를 받아서) */
   footer?: (matched: number, shown: number) => string;
 };
+
 
 export function RecordList({ query, header, empty, footer }: Props) {
   const q = useRecords(query);
@@ -54,8 +55,8 @@ export function RecordList({ query, header, empty, footer }: Props) {
       ListEmptyComponent={q.isPending ? <LoadingView /> : q.isError ? <ErrorView error={q.error} onRetry={q.refetch} /> : empty}
       ListFooterComponent={
         <View style={{ paddingVertical: space.md }}>
-          {q.isFetchingNextPage ? <ActivityIndicator color={colors.textSub} /> : null}
-          {items.length && footer ? <Text style={font.caption}>{footer(matched, items.length)}</Text> : null}
+          {q.isFetchingNextPage ? <ActivityIndicator color={colors.primary} /> : null}
+          {items.length && footer ? <Text style={[typography.body13Medium, { color: colors.textSub }]}>{footer(matched, items.length)}</Text> : null}
         </View>
       }
     />

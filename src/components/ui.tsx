@@ -1,7 +1,7 @@
 // 공통 UI 조각. A 파트와 같이 쓰는 컴포넌트는 여기에 둔다.
 import React from 'react';
 import { Image, type ImageSource } from 'expo-image';
-import { ActivityIndicator, ImageStyle, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, ImageStyle, Pressable, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { ApiError } from '../api/client';
 import type { Origin } from '../api/types';
 import { colors, font, radius, space, typography } from '../theme/tokens';
@@ -106,6 +106,15 @@ export function SectionTitle({ children, right, icon, desc }: { children: React.
   );
 }
 
+/** 작은 글자 버튼 ('+ 새 폴더', '기록 추가' 같은 보조 동작) */
+export function TextButton({ title, onPress, accessibilityLabel }: { title: string; onPress: () => void; accessibilityLabel?: string }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={8} style={({ pressed }) => [s.textBtn, pressed && { opacity: 0.6 }]} accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? title}>
+      <Text style={[typography.button12, { color: colors.textDisabled }]}>{title}</Text>
+    </Pressable>
+  );
+}
+
 export function LoadingView({ label = '불러오는 중이에요' }: { label?: string }) {
   return (
     <View style={s.center}>
@@ -139,6 +148,38 @@ export function EmptyView({ title, desc, action }: { title: string; desc?: strin
   );
 }
 
+/** 회색 검색창 (최종 디자인: 보관함·폴더·키워드) */
+export function SearchBar({ value, onChangeText, placeholder, style }: { value: string; onChangeText: (t: string) => void; placeholder: string; style?: ViewStyle }) {
+  return (
+    <View style={[s.searchBar, style]}>
+      <View style={s.searchIcon}><Icon source={require('../../assets/icons/search.svg')} width={15.2} height={15.2} /></View>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textDisabled}
+        style={s.searchInput}
+        returnKeyType="search"
+        accessibilityLabel={placeholder}
+      />
+    </View>
+  );
+}
+
+/** 빈 상태 (최종 디자인): 96px 일러스트 · 제목 · 설명 · 버튼 */
+export function EmptyState({ icon, title, desc, actionTitle, onAction }: { icon?: React.ReactNode; title: string; desc?: string; actionTitle?: string; onAction?: () => void }) {
+  return (
+    <View style={s.emptyState}>
+      <View style={{ alignItems: 'center', gap: space.md }}>
+        {icon}
+        <Text style={[typography.heading20, { textAlign: 'center' }]}>{title}</Text>
+        {desc ? <Text style={[typography.body14Medium, { color: colors.textBody, textAlign: 'center' }]}>{desc}</Text> : null}
+      </View>
+      {actionTitle && onAction ? <Button title={actionTitle} onPress={onAction} style={s.emptyBtn} /> : null}
+    </View>
+  );
+}
+
 export const Divider = () => <View style={{ height: 1, backgroundColor: colors.divider, marginVertical: space.lg }} />;
 
 const s = StyleSheet.create({
@@ -154,5 +195,11 @@ const s = StyleSheet.create({
   badgeText: typography.button12,
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.sm },
   sectionTitleLabel: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surface, borderRadius: radius.md, paddingLeft: space.sm, paddingRight: 10, minHeight: 44 },
+  searchIcon: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  searchInput: { flex: 1, ...typography.body14Semibold, color: colors.text, paddingVertical: 10 },
+  emptyState: { alignItems: 'center', gap: space.xl, paddingTop: 40, paddingBottom: space.md },
+  emptyBtn: { height: 44, paddingHorizontal: space.xl },
+  textBtn: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl, minHeight: 240 },
 });

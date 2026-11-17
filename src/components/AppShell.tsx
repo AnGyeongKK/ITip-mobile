@@ -86,7 +86,7 @@ export function AppHeader({ back, onBack }: { back?: boolean; onBack?: () => voi
           </Pressable>
         ) : (
           <Pressable hitSlop={12} onPress={() => setOpen(true)} accessibilityLabel="메뉴 열기" style={styles.iconBox}>
-            <Text style={styles.menuIcon}>☰</Text>
+            <Icon source={require('../../assets/icons/menu.svg')} width={20} height={20} />
           </Pressable>
         )}
         <View style={styles.iconBox} accessibilityLabel="프로필">
@@ -98,10 +98,19 @@ export function AppHeader({ back, onBack }: { back?: boolean; onBack?: () => voi
   );
 }
 
-/** extended: 'ITip Agent' 글자가 들어간 넓은 버튼 (결과 > 상세 내용 디자인) */
-export function AgentFab({ onPress, extended }: { onPress: () => void; extended?: boolean }) {
+/**
+ * extended: 'ITip Agent' 글자가 들어간 넓은 버튼 (결과 > 상세 내용 디자인)
+ * tone 'archive': 보관함·폴더·키워드 화면의 진한 버튼 / disabled: 질문할 기록이 없을 때 흐리게
+ */
+export function AgentFab({ onPress, extended, tone, disabled }: { onPress: () => void; extended?: boolean; tone?: 'archive'; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.fab, extended && styles.fabExtended, pressed && { opacity: 0.8 }]} accessibilityLabel="ITip Agent 열기">
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.fab, tone === 'archive' && styles.fabArchive, extended && styles.fabExtended, disabled && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+      accessibilityLabel="ITip Agent 열기"
+      accessibilityState={{ disabled: !!disabled }}
+    >
       {extended ? (
         <>
           <Text style={[typography.heading18, { color: colors.onPrimary }]}>ITip Agent</Text>
@@ -115,12 +124,15 @@ export function AgentFab({ onPress, extended }: { onPress: () => void; extended?
 }
 
 /** 상단바 + 본문 + (선택) Agent 버튼 */
-export function AppScreen({ children, onAgent, back, onBack, agentExtended }: { children: React.ReactNode; onAgent?: () => void; back?: boolean; onBack?: () => void; agentExtended?: boolean }) {
+export function AppScreen({ children, onAgent, back, onBack, agentExtended, agentTone, agentDisabled }: {
+  children: React.ReactNode; onAgent?: () => void; back?: boolean; onBack?: () => void;
+  agentExtended?: boolean; agentTone?: 'archive'; agentDisabled?: boolean;
+}) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <AppHeader back={back} onBack={onBack} />
       <View style={{ flex: 1 }}>{children}</View>
-      {onAgent ? <AgentFab onPress={onAgent} extended={agentExtended} /> : null}
+      {onAgent ? <AgentFab onPress={onAgent} extended={agentExtended} tone={agentTone} disabled={agentDisabled} /> : null}
     </SafeAreaView>
   );
 }
@@ -129,7 +141,7 @@ export function AppScreen({ children, onAgent, back, onBack, agentExtended }: { 
 export function Breadcrumb({ label, onPress }: { label: string; onPress?: () => void }) {
   return (
     <Pressable onPress={onPress ?? (() => router.back())} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
-      <Text style={font.caption}>{label}</Text>
+      <Text style={[typography.body13Medium, { color: colors.textSub }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -137,9 +149,9 @@ export function Breadcrumb({ label, onPress }: { label: string; onPress?: () => 
 const styles = StyleSheet.create({
   header: { height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.lg, backgroundColor: colors.bg },
   iconBox: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
-  menuIcon: { fontSize: 20, lineHeight: 24, color: colors.icon },
   logo: { width: 96, height: 30, backgroundColor: colors.surfaceStrong, borderRadius: 2 },
   fab: { position: 'absolute', right: space.lg, bottom: space.lg, width: 56, height: 56, borderRadius: 100, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 4px 5px ${colors.fabShadow}` },
+  fabArchive: { backgroundColor: colors.primaryDeep },
   fabExtended: { width: undefined, height: undefined, flexDirection: 'row', gap: 4, paddingHorizontal: space.lg, paddingVertical: space.md, borderRadius: 20 },
   drawerBackdrop: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(13,29,40,0.4)' },
   drawer: { width: '82%', backgroundColor: colors.bg, paddingHorizontal: space.lg },
