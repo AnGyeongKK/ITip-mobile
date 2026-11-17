@@ -1,13 +1,14 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
-import { ShareIntentProvider } from 'expo-share-intent';
-import { useFonts } from 'expo-font';
-import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { SplashOverlay } from '@/components/SplashOverlay';
 import { ShareReceiver } from '@/features/analysis/ShareReceiver';
 import { LoginGate } from '@/features/auth/LoginGate';
 import { PushNotifications } from '@/features/notifications/PushNotifications';
 import { colors, fontFamily } from '@/theme/tokens';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useFonts } from 'expo-font';
+import { Stack } from 'expo-router';
+import { ShareIntentProvider } from 'expo-share-intent';
+import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -35,6 +36,7 @@ export default function RootLayout() {
         <PushNotifications />
         <LoginGate />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
+        <SplashOverlay />
       </QueryClientProvider>
     </ShareIntentProvider>
   );

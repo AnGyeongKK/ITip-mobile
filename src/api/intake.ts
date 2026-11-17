@@ -14,13 +14,13 @@ export interface Existing {
 }
 export type YoutubeResource =
   | {
-      type: 'VIDEO';
-      videoId: string;
-      canonicalUrl: string;
-      metadata: Video | null; // null이면 정보 확인 중/실패. 빈 값으로 꾸미지 않는다
-      existing: Existing;
-      captionRequirement: { language: string; maxDurationMs: number };
-    }
+    type: 'VIDEO';
+    videoId: string;
+    canonicalUrl: string;
+    metadata: Video | null; // null이면 정보 확인 중/실패. 빈 값으로 꾸미지 않는다
+    existing: Existing;
+    captionRequirement: { language: string; maxDurationMs: number };
+  }
   | { type: 'PLAYLIST'; playlistId: string; canonicalUrl: string };
 
 // ---------- IMPORT-02 재생목록 ----------
@@ -169,7 +169,7 @@ interface MockItem {
   failure: CollectionFailureCode | null;
   forceSuccess?: boolean;
 }
-interface MockBatch { createdAt: number; items: MockItem[] }
+interface MockBatch { createdAt: number; items: MockItem[]; playlist?: Batch['playlist'] }
 const mockBatches = new Map<string, MockBatch>();
 
 const SEED_PROCESSING = 'b-processing-1'; // 재생목록·링크에서 '이미 분석 중'으로 보이는 배치
@@ -203,10 +203,15 @@ const FAILURES: Record<Exclude<Scenario, 'ok'>, ItemError> = {
   failx: { code: 'ANALYSIS_FAILED', message: '분석에 실패했어요.', retryable: false },
 };
 
+// 재생목록 mock의 영상 길이(분). 목록·분석 진행 화면이 같은 길이를 보여주도록 영상 ID로 정한다.
+const MOCK_MINUTES: Record<string, number> = {
+  'pl-aaaaaa1': 10, 'pl-aaaaaa2': 17, 'pl-aaaaaa3': 66, 'pl-processing1': 24,
+  'pl-bbbbbb1': 10, 'pl-bbbbbb2': 17, 'failx000001': 24,
+};
 const mockVideo = (videoId: string, i = 0): Video => ({
   videoId, title: `예시 영상 ${videoId}`, channelName: '예시 채널',
   thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-  durationMs: (10 + i * 7) * 60_000, channelImageUrl: null, publishedAt: null,
+    durationMs: (MOCK_MINUTES[videoId] ?? 10 + i * 7) * 60_000, channelImageUrl: null, publishedAt: null,
 });
 const NONE: Existing = { status: 'NONE', analysisId: null, recordId: null, jobId: null };
 
@@ -272,10 +277,10 @@ export async function getPlaylistItems(playlistId: string, cursor?: string): Pro
     const first = records[0];
     const items: PlaylistItem[] = page === 0
       ? [
-          mk('pl-aaaaaa1', 0), mk('pl-aaaaaa2', 1), mk('pl-aaaaaa3', 8, 'INELIGIBLE', 'DURATION_EXCEEDED'),
-          { ...mk(first.video.videoId, 3), title: first.video.title, existing: { status: 'COMPLETED' as const, analysisId: first.analysisId, recordId: first.recordId, jobId: null } },
-          { ...mk('pl-processing1', 2), title: '분석 중인 예시 영상', existing: { status: 'PROCESSING' as const, analysisId: null, recordId: null, jobId: mockJobId(SEED_PROCESSING, 'i-1') } },
-        ]
+        mk('pl-aaaaaa1', 0), mk('pl-aaaaaa2', 1), mk('pl-aaaaaa3', 8, 'INELIGIBLE', 'DURATION_EXCEEDED'),
+        { ...mk(first.video.videoId, 3), title: first.video.title, existing: { status: 'COMPLETED' as const, analysisId: first.analysisId, recordId: first.recordId, jobId: null } },
+        { ...mk('pl-processing1', 2), title: '분석 중인 예시 영상', existing: { status: 'PROCESSING' as const, analysisId: null, recordId: null, jobId: mockJobId(SEED_PROCESSING, 'i-1') } },
+      ]
       : [mk('pl-bbbbbb1', 0), mk('pl-bbbbbb2', 1), mk('failx000001', 2)]; // failx…는 분석이 실패해 부분 실패 배치를 만든다
     return {
       playlistId, title: '예시 재생목록', items, nextCursor: page === 0 ? 'p2' : null, hasNext: page === 0,
@@ -303,7 +308,12 @@ export async function createBatch(videoIds: string[], playlistId: string | null 
     }));
     const newItems = items.filter((i) => !i.existing);
     const batchId = `b-${idempotencyKey.slice(0, 8)}`;
-    mockBatches.set(batchId, { createdAt: created, items });
+    mockBatches.set(batchId, {
+      createdAt: created, items,
+      playlist: playlistId
+        ? { playlistId, title: '예시 재생목록', channelName: '예시 재생목록 채널', thumbnailUrl: null, totalItemCount: items.length }
+        : undefined,
+    });
     return {
       batchId, status: 'PREPARING',
       items: items.map((m) => {
@@ -340,7 +350,7 @@ export async function getBatch(batchId: Id): Promise<Batch> {
     const status: BatchStatusCode = finished
       ? (counts.failed === 0 ? 'COMPLETED' : counts.completed === 0 ? 'FAILED' : 'PARTIALLY_FAILED')
       : counts.processing + counts.queued + counts.retryWait === 0 ? 'PREPARING' : 'PROCESSING';
-    return { batchId, status, counts, items, nextPollAfterMs: finished ? null : 3000, playlist: null };
+    return { batchId, status, counts, items, nextPollAfterMs: finished ? null : 3000, playlist: b.playlist ?? null };
   }
   return request<Batch>({ method: 'GET', url: `/api/v1/analysis-batches/${batchId}` });
 }
