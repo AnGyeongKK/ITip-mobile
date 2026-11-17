@@ -11,6 +11,8 @@ const js = ts.transpileModule(readFileSync('src/api/chat.ts', 'utf8'), {
 function openStream() {
   const calls = [];
   const listeners = new Map();
+  let now = 0;
+  let timer;
   class EventSource {
     addEventListener(event, listener) { listeners.set(event, listener); }
     removeAllEventListeners() { listeners.clear(); }
@@ -26,17 +28,23 @@ function openStream() {
     exports,
     require: (name) => dependencies[name],
     XMLHttpRequest: { LOADING: 3, DONE: 4 },
-    setTimeout: () => 1,
-    clearTimeout: () => {},
+    setTimeout: (callback, millis) => (timer = { callback, at: now + millis }),
+    clearTimeout: (handle) => { if (handle === timer) timer = undefined; },
   });
   exports.streamMessage('room', { clientRequestId: 'key', content: '질문', retryOfMessageId: null }, {
     onRejected: (message) => calls.push(['rejected', message]),
     onDisconnected: () => calls.push(['recover']),
+    onDone: () => calls.push(['done']),
     onServerError: ({ code }) => calls.push(['server-error', code]),
   });
   return {
     calls,
     emitError: (event) => listeners.get('error')?.(event),
+    emit: (event, value) => listeners.get(event)?.({ data: JSON.stringify(value) }),
+    advance: (millis) => {
+      now += millis;
+      if (timer && timer.at <= now) timer.callback();
+    },
   };
 }
 
@@ -77,4 +85,25 @@ test('an accepted answer still handles a structured stream error', () => {
   const stream = openStream();
   stream.emitError({ data: '{"code":"CHAT_STREAM_FAILED","status":"INCOMPLETE"}' });
   assert.deepEqual(stream.calls, [['server-error', 'CHAT_STREAM_FAILED']]);
+});
+
+test('a valid first delta can arrive after the old 15-second limit', () => {
+  const stream = openStream();
+  stream.emit('meta', { assistantMessageId: 'assistant' });
+  stream.advance(40_000); // backend can spend 10s embedding and another 30s waiting for the provider
+  assert.deepEqual(stream.calls, []);
+  stream.emit('delta', { assistantMessageId: 'assistant', text: '답변' });
+  stream.advance(30_000);
+  assert.deepEqual(stream.calls, []);
+  stream.emit('done', { status: 'COMPLETED' });
+  stream.advance(45_000);
+  assert.deepEqual(stream.calls, [['done']]);
+});
+
+test('a silent stream still switches to recovery after the idle deadline', () => {
+  const stream = openStream();
+  stream.advance(44_999);
+  assert.deepEqual(stream.calls, []);
+  stream.advance(1);
+  assert.deepEqual(stream.calls, [['recover']]);
 });

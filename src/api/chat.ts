@@ -129,6 +129,9 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 }
 
 // ---------------- SSE 스트리밍 (CHAT-04) ----------------
+// 첫 delta가 오기 전 서버의 임베딩 10초와 모델 응답 대기 30초를 기다린다.
+const STREAM_IDLE_TIMEOUT_MS = 45_000;
+
 export interface StreamHandlers {
   onMeta?: (e: SseMeta) => void;
   onDelta?: (e: SseDelta) => void;
@@ -176,7 +179,7 @@ export function streamMessage(conversationId: string, body: SendBody, h: StreamH
   const watchIdle = () => {
     clearTimeout(idleTimer);
     // react-native-sse 1.2.1은 정상 HTTP EOF에 close를 보내지 않는다.
-    idleTimer = setTimeout(() => disconnect('idle'), 15000);
+    idleTimer = setTimeout(() => disconnect('idle'), STREAM_IDLE_TIMEOUT_MS);
   };
 
   es.addEventListener('open', watchIdle);
