@@ -1,10 +1,11 @@
-// 분석 기록 카드 (피그마 11/06 ARCHIVE-RECORDS·FOLDER-DETAIL·KEYWORD-DETAIL)
-// 제목 › / 한 줄 요약 / 키워드 칩 / 분석일. 썸네일 없음.
+// 분석 기록 카드 (피그마 최종 디자인 ARCHIVE-RECORDS·FOLDER-DETAIL·KEYWORD-DETAIL)
+// [제목 / 한 줄 요약] › · [키워드 칩] 분석일. 썸네일 없음.
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MatchField, RecordItem } from '../api/types';
 import { formatDate } from '../lib/format';
-import { colors, font, radius, space } from '../theme/tokens';
+import { colors, radius, space, typography } from '../theme/tokens';
+import { Icon } from './ui';
 
 const FIELD_LABEL: Record<MatchField, string> = {
   TITLE: '제목', ONE_LINE: '한 줄 요약', KEYWORD: '키워드', DETAIL: '상세', TECHNOLOGY: '기술', TOOL: '도구',
@@ -27,41 +28,41 @@ export function RecordCard({ item, onPress, onLongPress, checkbox }: Props) {
       disabled={checkbox?.disabled}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.7 }, checkbox?.disabled && { opacity: 0.5 }]}
     >
-      <View style={styles.titleRow}>
+      <View style={styles.topRow}>
         {checkbox ? (
           <View style={[styles.check, checkbox.checked && styles.checkOn]}>
-            {checkbox.checked ? <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text> : null}
+            {checkbox.checked ? <Icon source={require('../../assets/icons/check.svg')} width={16} height={12} /> : null}
           </View>
         ) : null}
-        <Text style={styles.title} numberOfLines={2}>{item.video.title}</Text>
-        {!checkbox ? <Text style={styles.chev}>›</Text> : null}
-      </View>
-      <Text style={[font.sub, { marginTop: space.xs }]} numberOfLines={2}>{item.oneLine}</Text>
-      {item.keywords.length ? (
-        <View style={styles.tags}>
-          {item.keywords.slice(0, 4).map((k) => (
-            <View key={k.keywordId} style={styles.tag}><Text style={styles.tagText}>{k.name}</Text></View>
-          ))}
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={typography.body14Semibold} numberOfLines={2}>{item.video.title}</Text>
+          <Text style={[typography.body14Medium, { color: colors.textBody }]} numberOfLines={2}>{item.oneLine}</Text>
         </View>
-      ) : null}
+        {!checkbox ? <Icon source={require('../../assets/icons/chevron-source.svg')} width={19} height={18} style={{ transform: [{ scaleX: -1 }] }} /> : null}
+      </View>
       {matches.length ? (
-        <Text style={[font.caption, { marginTop: space.xs, color: colors.accent }]} numberOfLines={1}>
+        <Text style={[typography.caption12, { color: colors.primaryStrong }]} numberOfLines={1}>
           일치: {matches.slice(0, 2).map((m) => `${FIELD_LABEL[m.field]} · ${m.text}`).join(', ')}
         </Text>
       ) : null}
-      <Text style={[font.caption, { marginTop: space.sm }]}>{formatDate(item.analyzedAt)}</Text>
+      <View style={styles.bottomRow}>
+        <View style={styles.tags}>
+          {item.keywords.slice(0, 4).map((k) => (
+            <View key={k.keywordId} style={styles.tag}><Text style={[typography.button12, { color: colors.icon }]}>{k.name}</Text></View>
+          ))}
+        </View>
+        <Text style={[typography.body14Medium, { color: colors.textDisabled }]}>{formatDate(item.analyzedAt)}</Text>
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { padding: space.lg, borderRadius: radius.md, backgroundColor: colors.surface, marginBottom: space.md },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  title: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text },
-  chev: { fontSize: 20, color: colors.textSub, marginLeft: space.sm, lineHeight: 22 },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', marginTop: space.sm },
-  tag: { backgroundColor: colors.surfaceStrong, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2, marginRight: space.xs, marginBottom: space.xs },
-  tagText: { fontSize: 11, color: colors.textSub },
-  check: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.textMuted, marginRight: space.sm, alignItems: 'center', justifyContent: 'center' },
-  checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  card: { paddingTop: space.md, paddingBottom: 20, paddingHorizontal: space.lg, borderRadius: radius.lg, backgroundColor: colors.surface, gap: space.sm, marginBottom: space.md },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
+  tags: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  tag: { backgroundColor: colors.bg, borderWidth: 1.4, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
+  check: { width: 20, height: 20, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  checkOn: { borderColor: colors.primaryStrong, backgroundColor: colors.primarySoft },
 });

@@ -87,6 +87,7 @@ export const typography = {
   heading22: t(22, 'bold', 1.4),
   heading20: t(20, 'bold', 1.4),
   heading18: t(18, 'bold', 1.4),
+  subtitle18Semibold: t(18, 'semibold', 1.6),
   subtitle16Bold: t(16, 'bold', 1.6),
   subtitle16Semibold: t(16, 'semibold', 1.6),
   body14Medium: t(14, 'medium', 1.6),

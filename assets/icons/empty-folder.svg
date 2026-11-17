@@ -1,0 +1,9 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="icon/empty-folder">
+<path id="back" d="M31 29H95C99 29 101 31 101 35L97 85C97 89 95 91 91 91H31V29Z" fill="#8393A0"/>
+<rect id="front" x="19" y="37" width="76" height="54" rx="8" fill="#CED4D9"/>
+<path id="tab" d="M19 45V34C19 30.6667 20.6667 29 24 29H44C45.3333 29 46.4 29.5333 47.2 30.6L53 37V45H19Z" fill="#CED4D9"/>
+<g id="dust-cloud">
+</g>
+</g>
+</svg>
