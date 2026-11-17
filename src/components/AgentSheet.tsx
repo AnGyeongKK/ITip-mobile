@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatMs } from '../lib/format';
 import { colors, radius, space, typography } from '../theme/tokens';
 import { Icon } from './ui';
+import { isConversationSendLocked, savedScopePresentation } from '../features/chat/savedScopePresentation';
 
 export type AgentContext = {
   scope: ChatScope;
@@ -76,6 +77,8 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(!!initialId);
   const [savedScope, setSavedScope] = useState<ChatScope>();
+  const [savedScopeLabel, setSavedScopeLabel] = useState<string>();
+  const [savedScopeStatus, setSavedScopeStatus] = useState<'AVAILABLE' | 'UNAVAILABLE'>();
   const [pending, setPending] = useState<PendingAssistant | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -140,11 +143,13 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
     void Promise.all([chatApi.getConversation(initialId, signal), chatApi.listMessages(initialId, {}, signal)])
       .then(async ([conversation, page]) => {
         const assistantId = conversation.activeAssistantMessageId;
-        const active = assistantId
+        const active = assistantId && conversation.scopeStatus !== 'UNAVAILABLE'
           ? page.items.find((m) => m.messageId === assistantId) ?? await chatApi.getMessage(initialId, assistantId, signal)
           : undefined;
         if (signal.aborted) return;
         setSavedScope(conversation.scope);
+        setSavedScopeLabel(conversation.scopeLabel);
+        setSavedScopeStatus(conversation.scopeStatus ?? 'AVAILABLE');
         setMessages([...page.items, ...(active && !page.items.some((m) => m.messageId === active.messageId) ? [active] : [])].map(fromServer));
         if (active && chatApi.isAssistantPending(active.status)) {
           await recover({ conversationId: initialId, clientRequestId: active.clientRequestId, assistantId: active.messageId }, controller);
@@ -162,7 +167,8 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
     return () => controller.abort();
   }, [initialId, recover]);
 
-  const locked = busy || !!pending || (!!initialId && !savedScope);
+  const unavailable = savedScopeStatus === 'UNAVAILABLE';
+  const locked = isConversationSendLocked(busy, !!pending, !!initialId, savedScope, savedScopeStatus);
   const refreshStatus = () => {
     if (!pending || operation.current) return;
     const controller = new AbortController();
@@ -254,6 +260,13 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
     setError(null);
   };
 
+  const displayContext = savedScope ? {
+    ...context,
+    scopeTitle: savedScopeLabel ?? context.scopeTitle,
+    scopeSub: undefined,
+    ...savedScopePresentation(savedScope),
+  } : context;
+
   const body = (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <Pressable style={styles.head} onPress={Keyboard.dismiss} accessible={false}>
@@ -280,11 +293,11 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
 
       <View style={styles.scopeBox}>
         <Text style={[typography.body14Semibold, { color: colors.textSub }]}>참고중</Text>
-        <Text style={typography.subtitle16Bold} numberOfLines={1}>{context.scopeTitle}</Text>
+        <Text style={typography.subtitle16Bold} numberOfLines={1}>{displayContext.scopeTitle}</Text>
         <View style={styles.scopeFoot}>
-          <Text style={[typography.body14Medium, { color: colors.textMuted, flexShrink: 1 }]} numberOfLines={1}>{context.scopeSub ?? ''}</Text>
+          <Text style={[typography.body14Medium, { color: colors.textMuted, flexShrink: 1 }]} numberOfLines={1}>{displayContext.scopeSub ?? ''}</Text>
           {/* '범위 변경'은 범위를 바꾸는 API가 없어 두지 않는다. 대화가 있으면 같은 자리에 '새 대화' */}
-          {messages.length ? (
+          {messages.length && !unavailable ? (
             <Pressable onPress={newChat} style={styles.smallBtn} accessibilityRole="button">
               <Text style={[typography.button12, { color: colors.textSub }]}>새 대화</Text>
             </Pressable>
@@ -301,7 +314,9 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         <Pressable onPress={Keyboard.dismiss} accessible={false} style={{ flexGrow: 1, gap: 20 }}>
-          <Text style={styles.answer}>{context.intro}</Text>
+          {unavailable
+            ? <Text style={[typography.body14Medium, { color: colors.textSub }]}>참고하던 분석 기록을 사용할 수 없어 새 질문을 보낼 수 없어요. 이전 대화는 확인할 수 있어요.</Text>
+            : <Text style={styles.answer}>{displayContext.intro}</Text>}
 
           {messages.length === 0 ? (
             <View style={{ gap: 18, alignItems: 'flex-start' }}>
@@ -333,9 +348,10 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder={context.placeholder}
+            placeholder={unavailable ? '이 대화에는 질문할 수 없어요' : displayContext.placeholder}
             placeholderTextColor={colors.textDisabled}
             style={styles.input}
+            editable={!unavailable}
             multiline
           />
           <Pressable accessibilityLabel="질문 보내기" onPress={() => send(text)} disabled={locked || !text.trim()} hitSlop={8} style={{ opacity: locked || !text.trim() ? 0.4 : 1 }}>

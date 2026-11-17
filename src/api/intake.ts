@@ -5,12 +5,19 @@ import { records } from './mock/db';
 import type { Id, Video } from './types';
 
 // ---------- IMPORT-01 링크 확인 ----------
-export type ExistingStatus = 'NONE' | 'PROCESSING' | 'COMPLETED';
+export type ExistingStatus = 'NONE' | 'AWAITING_UPLOAD' | 'PROCESSING' | 'COMPLETED';
 export interface Existing {
   status: ExistingStatus;
   analysisId: Id | null;
   recordId: Id | null;
   jobId: Id | null;
+  batchId?: Id | null;
+}
+
+/** 충돌 응답의 Location에서 서버의 배치 경로만 허용한다. */
+export function conflictBatchId(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409 || error.code !== 'STATE_CONFLICT') return null;
+  return /^\/api\/v1\/analysis-batches\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(error.location ?? '')?.[1] ?? null;
 }
 export type YoutubeResource =
   | {

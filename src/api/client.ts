@@ -22,6 +22,7 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public requestId?: string,
+    public location?: string,
   ) {
     super(message);
   }
@@ -60,6 +61,7 @@ function toApiError(e: unknown): ApiError {
       body?.code ?? 'UNKNOWN_ERROR',
       body?.message ?? '요청을 처리하지 못했어요.',
       err.response.headers?.['x-request-id'] as string | undefined,
+      err.response.headers?.location as string | undefined,
     );
   }
   return new ApiError(null, 'NETWORK_ERROR', '네트워크 연결을 확인해 주세요.');
