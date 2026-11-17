@@ -1,8 +1,7 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui';
 import { colors, font, radius, space } from '@/theme/tokens';
+import { StyleSheet, Text, View } from 'react-native';
 
 export type Issue = { code: string; message?: string };
 
@@ -15,10 +14,17 @@ export function toIssue(e: unknown): Issue {
 const COPY: Record<string, { title: string; desc: string }> = {
   INVALID_YOUTUBE_URL: { title: '올바른 링크가 아니에요', desc: 'YouTube 영상 또는 재생목록 링크를 입력해 주세요.' },
   VIDEO_UNAVAILABLE: { title: '접근할 수 없는 영상이에요', desc: '비공개이거나 삭제된 영상일 수 있어요.' },
+  LOOKUP_FAILED: { title: '링크를 확인하지 못했어요', desc: '영상 문제가 아니라 일시적인 오류일 수 있어요. 잠시 후 다시 시도해 주세요.' },
   DURATION_EXCEEDED: { title: '영상이 너무 길어요', desc: '60분 이하의 영상만 분석할 수 있어요.' },
   KOREAN_CAPTION_NOT_FOUND: { title: '한국어 자막이 없어요', desc: '한국어 자막이 있는 영상만 분석할 수 있어요.' },
   COLLECTION_RATE_LIMITED: { title: '자막 수집이 제한됐어요', desc: '이 기기에서 진행할 추가 수집을 멈췄어요.' },
   UPLOAD_FAILED: { title: '자막을 가져오지 못했어요', desc: '잠시 후 다시 시도해 주세요.' },
+  CAPTION_REUPLOAD_REQUIRED: { title: '자막을 다시 수집해야 해요', desc: '저장된 자막을 읽을 수 없어요. 이 영상의 자막을 다시 수집해 분석할 수 있어요.' },
+  CAPTION_UPLOAD_EXPIRED: { title: '자막 업로드 시간이 지났어요', desc: '필요한 영상은 자막을 다시 수집해 주세요.' },
+  ANALYSIS_FAILED: { title: '분석하지 못했어요', desc: '분석 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' },
+  JOB_NOT_RETRYABLE: { title: '지금은 다시 시도할 수 없어요', desc: '이미 진행 중이거나 다시 시도할 수 없는 분석이에요.' },
+  STATE_CONFLICT: { title: '이미 처리된 영상이에요', desc: '상태가 바뀌었어요. 최신 상태를 확인하고 있어요.' },
+  RESOURCE_NOT_FOUND: { title: '찾을 수 없는 항목이에요', desc: '삭제되었거나 접근할 수 없어요.' },
   PLAYLIST_NOT_FOUND: { title: '재생목록을 찾을 수 없어요', desc: '링크를 확인해 주세요.' },
   PLAYLIST_NOT_ACCESSIBLE: { title: '접근할 수 없는 재생목록이에요', desc: '공개 재생목록 링크인지 확인해 주세요.' },
   YOUTUBE_LOOKUP_UNAVAILABLE: { title: '목록을 불러오지 못했어요', desc: '잠시 후 다시 시도해 주세요.' },
