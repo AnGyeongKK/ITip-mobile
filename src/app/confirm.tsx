@@ -115,7 +115,7 @@ export default function Confirm() {
     try {
       await createBatch.mutateAsync({ videoIds: [resource.videoId] });
       void qc.invalidateQueries({ queryKey: ['quota'] });
-      router.replace('/'); // 진행은 홈의 '분석 중' 카드로 본다
+      router.dismissTo('/'); // 진행은 홈의 '분석 중' 카드로 본다
     } catch (e) {
       setStartIssue(toIssue(e));
     }
