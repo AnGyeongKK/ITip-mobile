@@ -7,6 +7,7 @@ const ts = require('typescript');
 const element = (type, props) => ({ type, props });
 const componentNames = new Proxy({}, { get: (_, key) => key });
 const folder = { folderId: 'folder-id', name: '테스트 폴더', recordCount: 1 };
+class ApiError extends Error {}
 
 function render(file, mutation, stateOverrides = [], props) {
   const js = ts.transpileModule(readFileSync(file, 'utf8'), {
@@ -29,7 +30,7 @@ function render(file, mutation, stateOverrides = [], props) {
       Alert: { alert: (...args) => calls.alerts.push(args) }, StyleSheet: { create: (styles) => styles } },
     'react-native-safe-area-context': componentNames,
     'expo-router': { router: { back: () => calls.back++ }, useLocalSearchParams: () => ({ folderId: folder.folderId }) },
-    '@/api/client': { ApiError: class extends Error {} },
+    '@/api/client': { ApiError },
     '@/hooks/queries': queries,
     '../hooks/queries': queries,
     '@/hooks/useDebounced': { useDebounced: (value) => value },
@@ -39,7 +40,7 @@ function render(file, mutation, stateOverrides = [], props) {
     '../lib/handoff': { agentForAll: () => ({}) },
     '../lib/format': { formatDate: () => '' },
     '@/lib/format': { formatDate: () => '' },
-    '../api/client': { ApiError: class extends Error {} },
+    '../api/client': { ApiError },
   };
   const exports = {};
   const requireMock = (name) => name.includes('/components/') || name === './RecordCard' || name === './ui' ? componentNames : dependencies[name];
@@ -60,12 +61,33 @@ const failed = {
 };
 
 test('failed add keeps the selected record on screen and never rejects through the press handler', async () => {
-  const { tree, calls } = render('src/app/archive/folders/[folderId]/add.tsx', failed, ['', ['record-id']]);
+  const error = new ApiError('요청한 항목을 찾을 수 없어요.');
+  let submitted;
+  const mutation = {
+    isError: true, error,
+    mutateAsync: (request) => {
+      submitted = JSON.parse(JSON.stringify(request));
+      return Promise.reject(error);
+    },
+  };
+  const { tree, calls } = render('src/app/archive/folders/[folderId]/add.tsx', mutation, ['', ['record-id']]);
   const { onPress, title } = find(tree, (node) => node?.type === 'Button').props;
   assert.equal(title, '1개 추가하기');
   await assert.doesNotReject(async () => onPress());
+  assert.deepEqual(submitted, { folderId: folder.folderId, recordIds: ['record-id'] });
   assert.equal(calls.back, 0);
-  assert.ok(find(tree, (node) => typeof node?.props?.children === 'string' && node.props.children.startsWith('추가하지 못했어요')));
+  assert.ok(find(tree, (node) => node?.props?.children === error.message));
+});
+
+test('adding records waits for success before leaving the screen', async () => {
+  let resolveRequest;
+  const mutation = { mutateAsync: () => new Promise((resolve) => { resolveRequest = resolve; }) };
+  const { tree, calls } = render('src/app/archive/folders/[folderId]/add.tsx', mutation, ['', ['record-id']]);
+  const saving = find(tree, (node) => node?.type === 'Button').props.onPress();
+  assert.equal(calls.back, 0);
+  resolveRequest();
+  await saving;
+  assert.equal(calls.back, 1);
 });
 
 test('failed folder deletion keeps the folder open and gives feedback without rejecting', async () => {

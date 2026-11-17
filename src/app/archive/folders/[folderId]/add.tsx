@@ -24,8 +24,14 @@ export default function AddRecordsScreen() {
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
 
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  const submit = () => {
-    add.mutate({ folderId, recordIds: picked }, { onSuccess: () => router.back() });
+  const submit = async () => {
+    try {
+      await add.mutateAsync({ folderId, recordIds: picked });
+    } catch {
+      // 선택은 그대로 두고 mutation의 오류 메시지를 표시한다.
+      return;
+    }
+    router.back();
   };
 
   return (
