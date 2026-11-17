@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ApiError } from '@/api/client';
 import { Breadcrumb } from '@/components/AppShell';
 import { RecordCard } from '@/components/RecordCard';
 import { Button, EmptyView, ErrorView, LoadingView } from '@/components/ui';
@@ -23,9 +24,8 @@ export default function AddRecordsScreen() {
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
 
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  const submit = async () => {
-    await add.mutateAsync({ folderId, recordIds: picked });
-    router.back();
+  const submit = () => {
+    add.mutate({ folderId, recordIds: picked }, { onSuccess: () => router.back() });
   };
 
   return (
@@ -57,7 +57,9 @@ export default function AddRecordsScreen() {
         ListFooterComponent={list.isFetchingNextPage ? <ActivityIndicator color={colors.textSub} /> : undefined}
       />
       <View style={styles.bottom}>
-        {add.isError ? <Text style={[font.caption, { color: colors.danger, marginBottom: space.sm }]}>추가하지 못했어요. 다시 시도해 주세요.</Text> : null}
+        {add.isError ? <Text style={[font.caption, { color: colors.danger, marginBottom: space.sm }]}>
+          {add.error instanceof ApiError ? add.error.message : '추가하지 못했어요. 다시 시도해 주세요.'}
+        </Text> : null}
         <Button title={picked.length ? `${picked.length}개 추가하기` : '기록을 선택해 주세요'} disabled={!picked.length} loading={add.isPending} onPress={submit} />
       </View>
     </SafeAreaView>

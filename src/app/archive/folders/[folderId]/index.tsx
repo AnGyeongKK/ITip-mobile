@@ -3,6 +3,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ApiError } from '@/api/client';
 import { AgentSheet } from '@/components/AgentSheet';
 import { AppScreen } from '@/components/AppShell';
 import { FolderNameModal } from '@/components/FolderNameModal';
@@ -41,7 +42,14 @@ export default function FolderDetailScreen() {
         style: 'destructive',
         onPress: () => Alert.alert('폴더를 삭제할까요?', '폴더만 삭제되고, 안에 있던 분석 기록은 그대로 남아요.', [
           { text: '취소', style: 'cancel' },
-          { text: '삭제', style: 'destructive', onPress: async () => { await del.mutateAsync(folderId); router.back(); } },
+          {
+            text: '삭제',
+            style: 'destructive',
+            onPress: () => del.mutate(folderId, {
+              onSuccess: () => router.back(),
+              onError: (error) => Alert.alert('폴더를 삭제하지 못했어요', error instanceof ApiError ? error.message : '다시 시도해 주세요.'),
+            }),
+          },
         ]),
       },
     ]);
