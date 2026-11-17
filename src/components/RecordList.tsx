@@ -1,6 +1,7 @@
 // 커서 무한 스크롤 기록 목록 (SEARCH-01). 분석 기록·폴더 상세·키워드 상세에서 같이 쓴다.
 import React from 'react';
 import { ActivityIndicator, Alert, AlertButton, FlatList, Text, View } from 'react-native';
+import { ApiError } from '../api/client';
 import type { RecordItem, RecordQuery } from '../api/types';
 import { useDeleteRecord, useRecords, useRemoveRecordFromFolder } from '../hooks/queries';
 import { openResult } from '../lib/handoff';
@@ -23,11 +24,19 @@ export function RecordList({ query, header, empty, footer }: Props) {
   const unlink = useRemoveRecordFromFolder();
   const items = q.data?.pages.flatMap((p) => p.items) ?? [];
   const matched = q.data?.pages[0]?.matchedCount ?? 0;
+  const showFailure = (title: string, error: Error) =>
+    Alert.alert(title, error instanceof ApiError ? error.message : '다시 시도해 주세요.');
 
   const onLong = (r: RecordItem) => {
     const buttons: AlertButton[] = [{ text: '취소', style: 'cancel' }];
-    if (query.folderId) {
-      buttons.push({ text: '이 폴더에서 빼기', onPress: () => unlink.mutate({ folderId: query.folderId!, recordId: r.recordId }) });
+    const folderId = query.folderId;
+    if (folderId) {
+      buttons.push({
+        text: '이 폴더에서 빼기',
+        onPress: () => unlink.mutate({ folderId, recordId: r.recordId }, {
+          onError: (error) => showFailure('폴더에서 기록을 빼지 못했어요', error),
+        }),
+      });
     }
     buttons.push({
       text: '기록 삭제',
@@ -35,7 +44,13 @@ export function RecordList({ query, header, empty, footer }: Props) {
       onPress: () =>
         Alert.alert('분석 기록을 삭제할까요?', '삭제한 기록은 복구할 수 없고, 모든 폴더에서 빠져요. 다시 분석하면 이용 한도가 차감돼요. 기존 대화 내용은 남아요.', [
           { text: '취소', style: 'cancel' },
-          { text: '삭제', style: 'destructive', onPress: () => del.mutate(r.recordId) },
+          {
+            text: '삭제',
+            style: 'destructive',
+            onPress: () => del.mutate(r.recordId, {
+              onError: (error) => showFailure('기록을 삭제하지 못했어요', error),
+            }),
+          },
         ]),
     });
     Alert.alert(r.video.title, undefined, buttons);
