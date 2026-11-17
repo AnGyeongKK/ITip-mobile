@@ -1,4 +1,4 @@
-// RESULT-SUMMARY / RESULT-MINDMAP / RESULT-DETAIL (피그마 11/06) · ANALYSIS-04
+// RESULT-SUMMARY / RESULT-MINDMAP / RESULT-DETAIL (피그마 '디자인 확정 화면' 11/11) · ANALYSIS-04
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -8,12 +8,12 @@ import { AgentSheet } from '@/components/AgentSheet';
 import { AppScreen } from '@/components/AppShell';
 import { Mindmap } from '@/components/Mindmap';
 import { PlayerModal } from '@/components/PlayerModal';
-import { ChannelAvatar } from '@/components/VideoInfoCard';
-import { Chip, EmptyView, ErrorView, LoadingView, OriginBadge } from '@/components/ui';
+import { VideoSummaryCard } from '@/components/VideoInfoCard';
+import { EmptyView, ErrorView, Icon, LoadingView, OriginBadge, SectionTitle, Tag, TimeTag } from '@/components/ui';
 import { useAnalysis, useRecord, useSaveReadingPosition } from '@/hooks/queries';
-import { formatDate, formatMs } from '@/lib/format';
+import { formatMs } from '@/lib/format';
 import { agentForVideo } from '@/lib/handoff';
-import { colors, font, radius, space } from '@/theme/tokens';
+import { colors, radius, space, typography } from '@/theme/tokens';
 
 const TABS: { key: ResultTab; label: string }[] = [
   { key: 'SUMMARY', label: '요약' },
@@ -44,11 +44,11 @@ export default function ResultScreen() {
     router.push({ pathname: '/section/[analysisId]/[sectionId]', params: { analysisId, sectionId } });
   };
 
-  if (q.isPending) return <AppScreen><LoadingView /></AppScreen>;
+  if (q.isPending) return <AppScreen back><LoadingView /></AppScreen>;
   if (q.isError) {
     const notReady = q.error instanceof ApiError && q.error.code === 'ANALYSIS_NOT_READY';
     return (
-      <AppScreen>
+      <AppScreen back>
         {notReady
           ? <EmptyView title="아직 분석 중이에요" desc="분석이 끝나면 알림으로 알려드릴게요." />
           : <ErrorView error={q.error} onRetry={q.refetch} />}
@@ -58,59 +58,54 @@ export default function ResultScreen() {
   const a = q.data;
   const summaryOnly = a.coverage === 'SUMMARY_ONLY';
   const selectedSectionId = record.data?.readingPosition.sectionId ?? null;
+  const shownTab: ResultTab = summaryOnly ? 'SUMMARY' : tab;
 
   return (
-    <AppScreen onAgent={() => setAgentOpen(true)}>
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 120 }} stickyHeaderIndices={[1]}>
+    <AppScreen back onAgent={() => setAgentOpen(true)} agentExtended={shownTab === 'DETAIL'}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} stickyHeaderIndices={[1]}>
         <View>
-          <Text style={[font.title, { marginBottom: space.md }]}>분석 결과</Text>
-          <View style={styles.videoCard}>
-            <View style={styles.row}>
-              <ChannelAvatar uri={a.video.channelImageUrl} size={40} />
-              <View style={{ flex: 1, marginLeft: space.sm }}>
-                <Text style={font.h3} numberOfLines={1}>{a.video.channelName}</Text>
-                {a.video.publishedAt ? <Text style={font.caption}>{formatDate(a.video.publishedAt)}</Text> : null}
-              </View>
-              <Pressable style={styles.originBtn} onPress={() => Linking.openURL(`https://www.youtube.com/watch?v=${a.video.videoId}`)}>
-                <Text style={styles.originBtnText}>원본 영상 보기 ↗</Text>
-              </Pressable>
-            </View>
-            <Text style={[font.sub, { marginTop: space.sm }]} numberOfLines={2}>{a.video.title}</Text>
+          <Text style={styles.pageTitle}>분석 결과</Text>
+          <View style={styles.side}>
+            <VideoSummaryCard video={a.video} onPress={() => Linking.openURL(`https://www.youtube.com/watch?v=${a.video.videoId}`)} />
           </View>
           {summaryOnly ? (
-            <View style={{ marginVertical: space.lg }}>
-              <Text style={font.h2}>이 영상은 요약만 제공해요</Text>
-              <Text style={[font.sub, { marginTop: space.xs }]}>ITip의 마인드맵과 상세 분석은 현재 IT 콘텐츠에 최적화되어 있어요. 다른 분야의 영상은 우선 핵심 요약만 제공하고 있어요.</Text>
+            <View style={[styles.side, { marginTop: space.lg }]}>
+              <Text style={typography.heading18}>이 영상은 요약만 제공해요</Text>
+              <Text style={[typography.body13Medium, { marginTop: space.xs, color: colors.textSub }]}>ITip의 마인드맵과 상세 분석은 현재 IT 콘텐츠에 최적화되어 있어요. 다른 분야의 영상은 우선 핵심 요약만 제공하고 있어요.</Text>
               <View style={styles.coverage}>
                 {[['요약', '제공'], ['마인드맵', 'IT 콘텐츠에서 지원'], ['상세 내용', 'IT 콘텐츠에서 지원']].map(([k, v]) => (
-                  <View key={k} style={styles.rowBetween}><Text style={font.sub}>{k}</Text><Text style={[font.sub, k === '요약' && { fontWeight: '700', color: colors.text }]}>{v}</Text></View>
+                  <View key={k} style={styles.rowBetween}>
+                    <Text style={[typography.body13Medium, { color: colors.textSub }]}>{k}</Text>
+                    <Text style={k === '요약' ? [typography.body14Semibold, { color: colors.primaryStrong }] : [typography.body13Medium, { color: colors.textSub }]}>{v}</Text>
+                  </View>
                 ))}
               </View>
             </View>
-          ) : (
-            <View style={[styles.row, { marginVertical: space.lg }]}>
-              <View style={styles.doneDot}><Text style={{ color: '#fff', fontSize: 12 }}>✓</Text></View>
-              <Text style={[font.h3, { marginLeft: space.sm }]}>영상 정리가 끝났어요</Text>
-            </View>
-          )}
+          ) : null}
         </View>
 
-        <View style={styles.tabs}>
-          {TABS.map((t) => {
-            const locked = summaryOnly && t.key !== 'SUMMARY';
-            return (
-              <Pressable key={t.key} disabled={locked} onPress={() => changeTab(t.key)} style={[styles.tab, tab === t.key && styles.tabOn]}>
-                <Text style={[font.body, tab === t.key ? { fontWeight: '700' } : { color: locked ? colors.textMuted : colors.textSub }]}>{t.label}</Text>
-                {locked ? <Text style={[font.caption, { fontSize: 10 }]}>IT 콘텐츠에서 지원</Text> : null}
-              </Pressable>
-            );
-          })}
+        <View style={styles.tabBar}>
+          <View style={styles.tabs}>
+            {TABS.map((t) => {
+              const locked = summaryOnly && t.key !== 'SUMMARY';
+              const on = shownTab === t.key;
+              return (
+                <Pressable key={t.key} disabled={locked} onPress={() => changeTab(t.key)} style={styles.tab} accessibilityRole="tab" accessibilityState={{ selected: on, disabled: locked }}>
+                  <View style={styles.tabLabel}>
+                    <Text style={on ? styles.tabTextOn : styles.tabText}>{t.label}</Text>
+                    {locked ? <Text style={[typography.caption12, { fontSize: 10, lineHeight: 14, color: colors.textMuted }]}>IT 콘텐츠에서 지원</Text> : null}
+                  </View>
+                  <View style={[styles.tabLine, on && styles.tabLineOn]} />
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
-        <View style={{ paddingTop: space.lg }}>
-          {tab === 'SUMMARY' || summaryOnly ? <SummaryTab a={a} onSection={openSection} /> : null}
-          {!summaryOnly && tab === 'MINDMAP' ? <Mindmap analysis={a} onPressSection={openSection} /> : null}
-          {!summaryOnly && tab === 'DETAIL' ? <DetailTab a={a} selectedId={selectedSectionId} onSection={openSection} onPlay={setPlayAt} /> : null}
+        <View>
+          {shownTab === 'SUMMARY' ? <SummaryTab a={a} onSection={openSection} /> : null}
+          {shownTab === 'MINDMAP' ? <View style={{ paddingTop: 40 }}><Mindmap analysis={a} onPressSection={openSection} /></View> : null}
+          {shownTab === 'DETAIL' ? <DetailTab a={a} selectedId={selectedSectionId} onSection={openSection} onPlay={setPlayAt} /> : null}
         </View>
       </ScrollView>
 
@@ -120,105 +115,152 @@ export default function ResultScreen() {
   );
 }
 
-function Bullets({ items }: { items: string[] }) {
-  return <>{items.map((t, i) => <Text key={i} style={[font.body, { marginTop: space.xs }]}>• {t}</Text>)}</>;
-}
-
 function SummaryTab({ a, onSection }: { a: Analysis; onSection: (id: string) => void }) {
   const highlights = a.summary.highlightSectionIds.map((id) => a.sections.find((s) => s.sectionId === id)).filter(Boolean) as Analysis['sections'];
   return (
-    <View style={styles.panel}>
-      <Text style={font.h3}>한 줄 요약</Text>
-      <Text style={[font.body, { marginTop: space.xs }]}>{a.summary.oneLine}</Text>
+    <View style={styles.summary}>
+      <View style={styles.block}>
+        <Text style={typography.subtitle16Bold}>한줄 요약</Text>
+        <Text style={[typography.subtitle16Semibold, { marginTop: space.xs }]}>{a.summary.oneLine}</Text>
+      </View>
 
-      {a.summary.keyPoints.length ? (<><Text style={[font.h3, styles.gap]}>핵심 포인트</Text><Bullets items={a.summary.keyPoints} /></>) : null}
+      {a.summary.keyPoints.length ? (
+        <View style={styles.block}>
+          <SectionTitle>핵심 포인트</SectionTitle>
+          <View style={{ gap: space.xs }}>
+            {a.summary.keyPoints.map((t, i) => (
+              <View key={i} style={styles.numRow}>
+                <Text style={[typography.button12, styles.num]}>{i + 1}</Text>
+                <Text style={[typography.body14Medium, { flex: 1 }]}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {a.summary.practicalPoints.length ? (
-        <>
-          <Text style={[font.h3, styles.gap]}>실무 적용 포인트</Text>
-          {a.summary.practicalPoints.map((p, i) => (
-            <View key={i} style={{ marginTop: space.xs }}>
-              {p.origin === 'AI_SUGGESTION' ? <OriginBadge origin={p.origin} /> : null}
-              <Text style={font.body}>• {p.text}</Text>
-            </View>
-          ))}
-        </>
+        <View style={styles.tipBox}>
+          <SectionTitle>실무 적용 TIP</SectionTitle>
+          <View style={{ gap: space.xs }}>
+            {a.summary.practicalPoints.map((p, i) => (
+              <View key={i} style={styles.tipRow}>
+                <Icon source={require('../../../assets/icons/check.svg')} width={16} height={12} style={{ marginTop: 5 }} />
+                <View style={{ flex: 1 }}>
+                  {/* [AI 제안]은 영상 내용과 구분해서 표시 (origin 필드) */}
+                  {p.origin === 'AI_SUGGESTION' ? <OriginBadge origin={p.origin} /> : null}
+                  <Text style={typography.body14Medium}>{p.text}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
       ) : null}
 
       {/* 빈 도구 목록은 섹션째 숨김 */}
       {a.summary.mentionedTools.length ? (
-        <>
-          <Text style={[font.h3, styles.gap]}>소개된 기술 · 도구</Text>
-          <View style={styles.wrap}>{a.summary.mentionedTools.map((t) => <Chip key={t.name} label={t.name} />)}</View>
-        </>
+        <View style={styles.block}>
+          <SectionTitle>소개된 기술 · 도구</SectionTitle>
+          <View style={[styles.wrap, { gap: space.sm }]}>{a.summary.mentionedTools.map((t) => <Tag key={t.name} label={t.name} />)}</View>
+        </View>
       ) : null}
 
       {highlights.length ? (
-        <>
-          <Text style={[font.h3, styles.gap]}>주요 타임스탬프</Text>
-          <Text style={[font.caption, { marginBottom: space.sm }]}>각 구간의 상세 내용으로 이동합니다</Text>
-          {highlights.map((s) => (
-            <Pressable key={s.sectionId} style={styles.tsCard} onPress={() => onSection(s.sectionId)}>
-              <Text style={font.caption}>{formatMs(s.startMs)}</Text>
-              <Text style={[font.body, { fontWeight: '700' }]}>{s.title}</Text>
-              <Text style={font.caption}>구간 자세히 보기 ›</Text>
-            </Pressable>
-          ))}
-        </>
+        <View style={styles.tsBlock}>
+          <View style={{ paddingHorizontal: space.sm }}>
+            <SectionTitle desc="각 구간별 자세히 분석한 내용을 볼 수 있어요">주요 타임스탬프</SectionTitle>
+          </View>
+          <View style={{ gap: space.md }}>
+            {highlights.map((s) => (
+              <Pressable key={s.sectionId} style={({ pressed }) => [styles.tsCard, pressed && { opacity: 0.7 }]} onPress={() => onSection(s.sectionId)}>
+                <View style={styles.tsLeft}>
+                  <TimeTag label={formatMs(s.startMs)} />
+                  <Text style={[typography.body14Semibold, { flexShrink: 1 }]} numberOfLines={1}>{s.title}</Text>
+                </View>
+                <View style={styles.moreBtn}>
+                  <Text style={[typography.button12, { color: colors.textDisabled }]}>상세 내용</Text>
+                  <Icon source={require('../../../assets/icons/chevron-small.svg')} width={9} height={9} />
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       ) : null}
 
-      <View style={[styles.wrap, { marginTop: space.md }]}>
-        {a.summary.keywords.map((k) => (
-          <Chip key={k.keywordId} label={k.name} onPress={() => router.push({ pathname: '/archive/keywords/detail', params: { keywordIds: k.keywordId, label: k.name } })} />
-        ))}
-      </View>
+      {a.summary.keywords.length ? (
+        <View style={styles.block}>
+          <SectionTitle>키워드</SectionTitle>
+          <View style={[styles.wrap, { gap: 6 }]}>
+            {a.summary.keywords.map((k) => (
+              <Tag key={k.keywordId} variant="keyword" label={`# ${k.name}`} onPress={() => router.push({ pathname: '/archive/keywords/detail', params: { keywordIds: k.keywordId, label: k.name } })} />
+            ))}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function DetailTab({ a, selectedId, onSection, onPlay }: { a: Analysis; selectedId: string | null; onSection: (id: string) => void; onPlay: (ms: number) => void }) {
   return (
-    <View>
+    <View style={styles.detail}>
       {a.sections.map((s, i) => (
         <View key={s.sectionId} style={[styles.detailCard, s.sectionId === selectedId && styles.detailSelected]}>
-          <View style={styles.rowBetween}>
-            <Text style={[font.sub, { fontWeight: '700' }]}>{String(i + 1).padStart(2, '0')}</Text>
-            <View style={styles.row}>
-              {s.sectionId === selectedId ? <View style={styles.selBadge}><Text style={font.caption}>선택한 구간</Text></View> : null}
-              <Text style={font.caption}>{formatMs(s.startMs)}</Text>
+          <View style={{ gap: space.sm }}>
+            <View style={{ gap: 2 }}>
+              <View style={styles.rowBetweenTop}>
+                <Text style={[typography.subtitle16Bold, { color: colors.textDisabled }]}>{String(i + 1).padStart(2, '0')}</Text>
+                <TimeTag label={formatMs(s.startMs)} onPress={() => onPlay(s.startMs)} />
+              </View>
+              <Text style={typography.subtitle16Bold}>{s.title}</Text>
             </View>
+            <Text style={[typography.body14Medium, { color: colors.textBody }]}>{s.summary}</Text>
           </View>
-          <Text style={[font.h3, { marginTop: space.sm }]}>{s.title}</Text>
-          <Text style={[font.body, { marginTop: space.sm, color: colors.textSub }]}>{s.summary}</Text>
-          <Pressable onPress={() => onPlay(s.startMs)} style={{ marginTop: space.md }}>
-            <Text style={[font.caption, { color: colors.text, fontWeight: '600' }]}>{formatMs(s.startMs)}부터 원본 영상 보기 ↗</Text>
-          </Pressable>
+          {s.keywords.length ? (
+            <View style={[styles.wrap, { gap: space.xs }]}>
+              {s.keywords.map((k) => <Tag key={k.keywordId} variant="keywordOnTint" label={`# ${k.name}`} />)}
+            </View>
+          ) : null}
           <View style={styles.cardDivider} />
-          <Pressable onPress={() => onSection(s.sectionId)}><Text style={[font.sub, { fontWeight: '700', color: colors.text }]}>구간 자세히 보기 ›</Text></Pressable>
+          <Pressable onPress={() => onSection(s.sectionId)} style={styles.rowBetween} hitSlop={8}>
+            <Text style={[typography.button12, { color: colors.icon }]}>구간 자세히 보기</Text>
+            <Icon source={require('../../../assets/icons/chevron-14.svg')} width={14} height={14} style={{ transform: [{ scaleX: -1 }] }} />
+          </Pressable>
         </View>
       ))}
-      <Text style={font.caption}>↗ 원본 영상은 앱 안에서 재생돼요. 제공된 요약을 바탕으로 정리했어요. 자세한 내용은 원본에서 확인해 주세요.</Text>
+      <Text style={[typography.caption12, { color: colors.textMuted }]}>원본 영상은 앱 안에서 재생돼요. 제공된 요약을 바탕으로 정리했어요. 자세한 내용은 원본에서 확인해 주세요.</Text>
     </View>
   );
 }
 
+
 const styles = StyleSheet.create({
+  side: { paddingHorizontal: space.lg },
+  pageTitle: { ...typography.heading20, paddingHorizontal: space.xl, paddingVertical: space.md },
   row: { flexDirection: 'row', alignItems: 'center' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  videoCard: { padding: space.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
-  originBtn: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: 6 },
-  originBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '600' },
-  doneDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.textMuted, alignItems: 'center', justifyContent: 'center' },
-  tabs: { flexDirection: 'row', backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.border },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: space.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabOn: { borderBottomColor: colors.text },
-  panel: { backgroundColor: colors.surface, borderRadius: radius.md, padding: space.lg },
-  gap: { marginTop: space.xl },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: space.sm },
-  tsCard: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: space.md, marginBottom: space.sm },
-  detailCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: space.lg, marginBottom: space.lg },
-  detailSelected: { borderWidth: 1, borderColor: colors.textMuted, backgroundColor: colors.bg },
-  selBadge: { backgroundColor: colors.surfaceStrong, borderRadius: radius.sm, paddingHorizontal: 6, marginRight: space.sm },
+  rowBetweenTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   coverage: { marginTop: space.md, padding: space.md, borderRadius: radius.md, backgroundColor: colors.surface, gap: space.xs },
-  cardDivider: { height: 1, backgroundColor: colors.border, marginVertical: space.md },
+  tabBar: { backgroundColor: colors.bg, paddingTop: space.xxl, alignItems: 'center' },
+  tabs: { flexDirection: 'row', width: '100%', paddingHorizontal: 16.5 },
+  tab: { flex: 1 },
+  tabLabel: { height: 44, alignItems: 'center', justifyContent: 'center' },
+  tabText: { ...typography.body14Medium, color: colors.textMuted },
+  tabTextOn: { ...typography.body14Bold, color: colors.textStrong },
+  tabLine: { height: 2, backgroundColor: colors.divider },
+  tabLineOn: { backgroundColor: colors.text },
+  summary: { paddingTop: 18, gap: space.md, alignItems: 'stretch' },
+  block: { paddingHorizontal: space.xl, paddingVertical: 10 },
+  numRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
+  num: { color: colors.primaryStrong, lineHeight: 22 },
+  tipBox: { marginHorizontal: space.lg, backgroundColor: colors.surface, borderRadius: radius.lg, paddingTop: space.md, paddingBottom: 20, paddingHorizontal: space.lg },
+  tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.xs },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap' },
+  tsBlock: { padding: 10, marginHorizontal: 6 },
+  tsCard: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
+  tsLeft: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1 },
+  moreBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 10, paddingRight: 6, paddingVertical: 4 },
+  detail: { paddingTop: space.xxl, paddingHorizontal: space.lg, gap: 20 },
+  detailCard: { backgroundColor: colors.surface, borderRadius: radius.lg, paddingTop: space.md, paddingBottom: 20, paddingHorizontal: space.lg, gap: 10 },
+  detailSelected: { backgroundColor: colors.primarySoft },
+  cardDivider: { height: 1, backgroundColor: colors.border },
 });
