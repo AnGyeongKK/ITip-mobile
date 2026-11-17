@@ -106,14 +106,6 @@ export const needsRecollect = (item: BatchItem) =>
   (item.status === 'AWAITING_UPLOAD' && !canCollectCaption(item)) ||
   (item.status === 'FAILED' && RECOLLECT_CODES.includes(item.error?.code ?? ''));
 
-/** 진행 화면의 4단계(영상 확인 → 확인 완료 → 내용 확인 → AI 정리). 서버가 주는 값이 아니라 앱이 항목 상태로 매핑한 추측. (6단계에서 제거) */
-export function overallStep(b: Batch): 1 | 2 | 3 | 4 {
-  const rank = (it: BatchItem): 1 | 2 | 3 | 4 =>
-    it.status === 'AWAITING_UPLOAD' ? 1 : it.status === 'QUEUED' || it.status === 'RETRY_WAIT' ? 2 : it.stage === 'VALIDATING' ? 3 : 4;
-  const active = b.items.filter((i) => i.status !== 'COMPLETED' && i.status !== 'FAILED');
-  return active.length === 0 ? 4 : (Math.min(...active.map(rank)) as 1 | 2 | 3 | 4);
-}
-
 // ---------- ANALYSIS-02 영상별 작업 ----------
 export interface Job {
   jobId: Id;
@@ -162,10 +154,10 @@ export class UploadError extends Error {
 
 // ---------- mock ----------
 // 영상 ID의 앞부분으로 시나리오를 고른다 (mock 모드에서만 동작). 링크 예: https://youtu.be/retryfail001
-//   reupload…   분석 실패, 원본 자막 유실(CAPTION_REUPLOAD_REQUIRED, retryable:false)
+//   reupload…   분석 실패, 원본 자막 유실(CAPTION_REUPLOAD_REQUIRED, retryable:false). 자막을 다시 수집한 새 배치에서는 성공
 //   retryfail…  분석 실패(retryable:true) → 수동 재시도 202(새 배치)
 //   retry200…   분석 실패(retryable:true) → 수동 재시도 200(완료 결과 재사용)
-//   retry410…   분석 실패(retryable:true) → 수동 재시도 410(자막 재수집 필요)
+//   retry410…   분석 실패(retryable:true) → 수동 재시도 410(자막 재수집 필요). 재수집한 새 배치에서는 성공
 //   failx…      분석 실패(retryable:false)
 //   missing…    링크 조회 404(접근 불가)   lookupfail…  링크 조회 500(일시 장애)
 //   inprogress… 링크 조회 시 이미 분석 중(PROCESSING)
@@ -200,6 +192,8 @@ function mockBatch(batchId: string): MockBatch | undefined {
 type Scenario = 'ok' | 'reupload' | 'retryfail' | 'retry200' | 'retry410' | 'failx';
 const scenarioOf = (videoId: string): Scenario =>
   (['reupload', 'retryfail', 'retry200', 'retry410', 'failx'] as const).find((p) => videoId.startsWith(p)) ?? 'ok';
+/** 자막을 다시 수집한 새 배치에서는 성공하는 시나리오 */
+const RECOLLECT_SCENARIOS: Scenario[] = ['reupload', 'retry410'];
 const RETRYABLE_ERROR: ItemError = { code: 'ANALYSIS_FAILED', message: '분석 중 문제가 생겼어요.', retryable: true };
 const FAILURES: Record<Exclude<Scenario, 'ok'>, ItemError> = {
   reupload: { code: 'CAPTION_REUPLOAD_REQUIRED', message: '자막 파일을 읽을 수 없어요.', retryable: false },
@@ -300,8 +294,12 @@ export async function createBatch(videoIds: string[], playlistId: string | null 
     await delay(400);
     const unique = [...new Set(videoIds)];
     const created = Date.now();
+    const previous = Array.from(mockBatches.values());
     const items: MockItem[] = unique.map((videoId, i) => ({
       itemId: `i-${i + 1}`, videoId, existing: records.some((r) => r.video.videoId === videoId), submittedAt: null, failure: null,
+      // 같은 영상을 다시 수집해 만든 배치(재수집)에서는 성공하는 시나리오가 있다
+      forceSuccess: RECOLLECT_SCENARIOS.includes(scenarioOf(videoId)) &&
+        previous.some((mb) => mb.items.some((x) => x.videoId === videoId)),
     }));
     const newItems = items.filter((i) => !i.existing);
     const batchId = `b-${idempotencyKey.slice(0, 8)}`;
