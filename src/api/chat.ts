@@ -129,6 +129,9 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 }
 
 // ---------------- SSE 스트리밍 (CHAT-04) ----------------
+// 첫 delta가 오기 전 서버의 임베딩 10초와 모델 응답 대기 30초를 기다린다.
+const STREAM_IDLE_TIMEOUT_MS = 45_000;
+
 export interface StreamHandlers {
   onMeta?: (e: SseMeta) => void;
   onDelta?: (e: SseDelta) => void;
@@ -176,7 +179,7 @@ export function streamMessage(conversationId: string, body: SendBody, h: StreamH
   const watchIdle = () => {
     clearTimeout(idleTimer);
     // react-native-sse 1.2.1은 정상 HTTP EOF에 close를 보내지 않는다.
-    idleTimer = setTimeout(() => disconnect('idle'), 15000);
+    idleTimer = setTimeout(() => disconnect('idle'), STREAM_IDLE_TIMEOUT_MS);
   };
 
   es.addEventListener('open', watchIdle);
@@ -194,9 +197,17 @@ export function streamMessage(conversationId: string, body: SendBody, h: StreamH
       const d = parse<SseError>(e.data);
       if (d?.code) { close(); h.onServerError?.(d); return; }
     }
-    if ('xhrStatus' in e && e.xhrStatus >= 400 && e.xhrStatus < 500) {
+    if ('xhrStatus' in e && e.xhrStatus >= 400) {
+      // react-native-sse can report the HTTP error before the JSON body has finished loading.
+      if (e.xhrState !== XMLHttpRequest.DONE) return;
       const rejection = parse<{ code: string; message: string }>(e.message);
-      if (rejection?.code !== 'CHAT_GENERATION_IN_PROGRESS') {
+      if (e.xhrStatus === 409 && rejection?.code === 'DUPLICATE_CHAT_REQUEST') {
+        disconnect('duplicate chat request');
+        return;
+      }
+      const rejectedBeforeAdmission = e.xhrStatus === 503
+        && (rejection?.code === 'CHAT_CAPACITY_EXCEEDED' || rejection?.code === 'CHAT_AI_NOT_CONFIGURED');
+      if (e.xhrStatus < 500 || rejectedBeforeAdmission) {
         close();
         h.onRejected?.(rejection?.message ?? '질문을 보내지 못했어요.');
         return;

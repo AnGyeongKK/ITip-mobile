@@ -1,6 +1,7 @@
 // 메뉴 > ITip Agent: 전체 기록으로 새 대화 + 저장된 대화 목록 (CHAT-02, CHAT-07)
 import React, { useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ApiError } from '@/api/client';
 import type { ConversationListItem } from '@/api/types';
 import { AgentSheet, AgentContext } from '@/components/AgentSheet';
 import { AppScreen } from '@/components/AppShell';
@@ -28,7 +29,13 @@ export default function AgentHub() {
     }
     Alert.alert('대화를 삭제할까요?', '이 채팅방의 질문과 답변이 모두 삭제돼요.', [
       { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => del.mutate(c.conversationId) },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: () => del.mutate(c.conversationId, {
+          onError: (error) => Alert.alert('대화를 삭제하지 못했어요', error instanceof ApiError ? error.message : '다시 시도해 주세요.'),
+        }),
+      },
     ]);
   };
 

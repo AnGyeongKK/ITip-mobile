@@ -2,7 +2,7 @@
 // 사용자는 서버가 인증(시연에서는 데모 사용자 ID)으로 정한다. 응답 본문은 쓰지 않는다.
 import { delay, request, USE_MOCK } from './client';
 
-export type NotificationPermission = 'GRANTED' | 'DENIED' | 'UNDETERMINED';
+export type NotificationPermission = 'GRANTED' | 'DENIED' | 'NOT_DETERMINED';
 
 export interface DeviceRegistration {
   platform: 'ANDROID';
