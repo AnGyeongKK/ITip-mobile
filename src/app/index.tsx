@@ -1,6 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ApiError } from '@/api/client';
 import { getJob } from '@/api/intake';
 import type { Video } from '@/api/types';
 import { AppScreen } from '@/components/AppShell';
@@ -8,15 +6,27 @@ import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
 import { RecordCard } from '@/components/RecordCard';
 import { Button, ErrorView, LoadingView, SectionTitle } from '@/components/ui';
 import { VideoInfoCard, VideoThumb } from '@/components/VideoInfoCard';
-import { parseYoutubeUrl } from '@/features/analysis/parseYoutubeUrl';
 import { useCollectStore } from '@/features/analysis/collectStore';
-import { useHome } from '@/hooks/queries';
+import { parseYoutubeUrl } from '@/features/analysis/parseYoutubeUrl';
 import { useBatch, useCreateBatch, useImportResource } from '@/hooks/intakeQueries';
+import { useHome } from '@/hooks/queries';
 import { formatRange } from '@/lib/format';
 import { openResult } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 type Candidate = { videoId: string; metadata: Video | null };
+
+/**
+ * 링크 조회 단계의 오류를 안내로 바꾼다.
+ * 영상이 없다(404 → VIDEO_UNAVAILABLE)와 일시적인 조회 장애(네트워크·5xx → LOOKUP_FAILED)를 다르게 보여준다.
+ */
+function lookupIssue(e: unknown): Issue {
+  if (e instanceof ApiError && (e.isNetwork || (e.status ?? 0) >= 500)) return { code: 'LOOKUP_FAILED' };
+  return toIssue(e);
+}
 
 export default function Home() {
   const { sharedUrl, ts } = useLocalSearchParams<{ sharedUrl?: string; ts?: string }>();
@@ -54,7 +64,7 @@ export default function Home() {
       if (d != null && d > r.captionRequirement.maxDurationMs) return setIssue({ code: 'DURATION_EXCEEDED' });
       setCandidate({ videoId: r.videoId, metadata: r.metadata });
     } catch (e) {
-      setIssue(toIssue(e));
+      setIssue(lookupIssue(e));
     }
   }, [importResource.mutateAsync]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -104,7 +114,11 @@ export default function Home() {
 
         {issue ? (
           <View style={{ marginTop: space.lg }}>
-            <IntakeError issue={issue} onClose={() => setIssue(null)} />
+            <IntakeError
+              issue={issue}
+              onRetry={issue.code === 'LOOKUP_FAILED' ? () => submit(text) : undefined}
+              onClose={() => setIssue(null)}
+            />
           </View>
         ) : null}
 
