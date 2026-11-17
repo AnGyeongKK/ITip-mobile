@@ -6,6 +6,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Icon } from '@/components/ui';
 import { useMockAuth } from '@/features/auth/mockAuth';
+import { syncPushDevice } from '@/features/notifications/pushDevice';
 import { colors, radius, space, typography } from '@/theme/tokens';
 
 type TermKey = 'service' | 'privacy' | 'data';
@@ -33,6 +34,8 @@ export default function LoginTerms() {
   const toggle = (k: TermKey) => setAgreed((a) => ({ ...a, [k]: !a[k] }));
   const start = () => {
     signIn();
+    // 분석 완료 알림을 받을 수 있게 시작할 때 알림 권한을 묻고 기기를 등록한다
+    void syncPushDevice({ askPermission: true });
     router.replace('/');
   };
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/login' as never));

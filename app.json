@@ -36,6 +36,13 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "color": "#00A2E2",
+          "defaultChannel": "analysis"
+        }
+      ],
+      [
         "expo-share-intent",
         {
           "androidIntentFilters": [
