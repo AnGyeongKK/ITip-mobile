@@ -194,9 +194,17 @@ export function streamMessage(conversationId: string, body: SendBody, h: StreamH
       const d = parse<SseError>(e.data);
       if (d?.code) { close(); h.onServerError?.(d); return; }
     }
-    if ('xhrStatus' in e && e.xhrStatus >= 400 && e.xhrStatus < 500) {
+    if ('xhrStatus' in e && e.xhrStatus >= 400) {
+      // react-native-sse can report the HTTP error before the JSON body has finished loading.
+      if (e.xhrState !== XMLHttpRequest.DONE) return;
       const rejection = parse<{ code: string; message: string }>(e.message);
-      if (rejection?.code !== 'CHAT_GENERATION_IN_PROGRESS') {
+      if (e.xhrStatus === 409 && rejection?.code === 'DUPLICATE_CHAT_REQUEST') {
+        disconnect('duplicate chat request');
+        return;
+      }
+      const rejectedBeforeAdmission = e.xhrStatus === 503
+        && (rejection?.code === 'CHAT_CAPACITY_EXCEEDED' || rejection?.code === 'CHAT_AI_NOT_CONFIGURED');
+      if (e.xhrStatus < 500 || rejectedBeforeAdmission) {
         close();
         h.onRejected?.(rejection?.message ?? '질문을 보내지 못했어요.');
         return;
