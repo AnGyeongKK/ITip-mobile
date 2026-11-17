@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   logo: { width: 96, height: 30, backgroundColor: colors.surfaceStrong, borderRadius: 2 },
   fab: { position: 'absolute', right: space.lg, bottom: space.lg, width: 56, height: 56, borderRadius: 100, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 4px 5px ${colors.fabShadow}` },
   fabArchive: { backgroundColor: colors.primaryDeep },
-  fabExtended: { width: undefined, height: undefined, flexDirection: 'row', gap: 4, paddingHorizontal: space.lg, paddingVertical: space.md, borderRadius: 20 },
+  fabExtended: { width: 'auto', height: 'auto', flexDirection: 'row', gap: 4, paddingHorizontal: space.lg, paddingVertical: space.md, borderRadius: 20 },
   drawerBackdrop: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(13,29,40,0.4)' },
   drawer: { width: '82%', backgroundColor: colors.bg, paddingHorizontal: space.lg },
   drawerHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: space.md },
