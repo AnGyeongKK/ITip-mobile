@@ -92,7 +92,7 @@ export default function PlaylistScreen() {
   };
 
   if (q.isPending) return <AppScreen><LoadingView label="재생목록을 불러오고 있어요" /></AppScreen>;
-  if (q.isError) {
+  if (q.isError && !q.data) {
     const code = q.error instanceof ApiError ? q.error.code : 'GENERIC';
     return (
       <AppScreen>

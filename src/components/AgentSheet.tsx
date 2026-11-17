@@ -314,8 +314,9 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         <Pressable onPress={Keyboard.dismiss} accessible={false} style={{ flexGrow: 1, gap: 20 }}>
-          <Text style={styles.answer}>{displayContext.intro}</Text>
-          {unavailable ? <Text style={[typography.body14Medium, { color: colors.textSub }]}>참고하던 분석 기록을 사용할 수 없어 새 질문을 보낼 수 없어요. 이전 대화는 확인할 수 있어요.</Text> : null}
+          {unavailable
+            ? <Text style={[typography.body14Medium, { color: colors.textSub }]}>참고하던 분석 기록을 사용할 수 없어 새 질문을 보낼 수 없어요. 이전 대화는 확인할 수 있어요.</Text>
+            : <Text style={styles.answer}>{displayContext.intro}</Text>}
 
           {messages.length === 0 ? (
             <View style={{ gap: 18, alignItems: 'flex-start' }}>
@@ -347,7 +348,7 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder={displayContext.placeholder}
+            placeholder={unavailable ? '이 대화에는 질문할 수 없어요' : displayContext.placeholder}
             placeholderTextColor={colors.textDisabled}
             style={styles.input}
             editable={!unavailable}
