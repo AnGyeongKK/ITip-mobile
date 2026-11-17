@@ -1,17 +1,20 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ApiError } from '@/api/client';
-import { formatDuration, type PlaylistItem } from '@/api/intake';
+import { formatDuration, getJob, type PlaylistItem } from '@/api/intake';
 import { AppScreen } from '@/components/AppShell';
 import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
 import { Button, EmptyView, LoadingView } from '@/components/ui';
+import { useCollectStore } from '@/features/analysis/collectStore';
 import { useCreateBatch, usePlaylistItems } from '@/hooks/intakeQueries';
 import { openResult } from '@/lib/handoff';
 import { colors, font, radius, space } from '@/theme/tokens';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 // 선택 가능: 분석 불가로 확정되지 않았고(UNKNOWN 포함), 기존 결과·진행 중인 작업이 없는 영상
 const isSelectable = (i: PlaylistItem) => i.eligibility !== 'INELIGIBLE' && i.existing.status === 'NONE';
+// 진행 상태를 열 수 있는 영상: 이미 접수돼 분석 중이고 jobId가 있는 영상
+const isInProgress = (i: PlaylistItem) => i.existing.status === 'PROCESSING' && !!i.existing.jobId;
 
 function note(i: PlaylistItem): string {
   if (i.existing.status === 'COMPLETED') return '분석 완료 · 눌러서 결과 보기';
@@ -30,6 +33,7 @@ export default function PlaylistScreen() {
   const createBatch = useCreateBatch();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [issue, setIssue] = useState<Issue | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null); // 진행 상태를 여는 중인 영상
 
   const head = q.data?.pages[0];
   // 같은 영상이 여러 번 나와도 videoId 기준으로 1개만 둔다
@@ -54,6 +58,23 @@ export default function PlaylistScreen() {
       router.replace({ pathname: '/analyze/[batchId]', params: { batchId: b.batchId } });
     } catch (e) {
       setIssue(toIssue(e));
+    }
+  };
+
+  /** 이미 접수된 영상의 진행 화면 열기: jobId → batchId. 새 배치를 만들거나 자막을 다시 수집하지 않는다. */
+  const openProgress = async (item: PlaylistItem) => {
+    const jobId = item.existing.jobId;
+    if (!jobId || openingId) return;
+    setIssue(null);
+    setOpeningId(item.videoId);
+    try {
+      const job = await getJob(jobId);
+      useCollectStore.getState().rememberBatch(job.batchId);
+      router.push({ pathname: '/analyze/[batchId]', params: { batchId: job.batchId } });
+    } catch (e) {
+      setIssue(toIssue(e));
+    } finally {
+      setOpeningId(null);
     }
   };
 
@@ -94,12 +115,18 @@ export default function PlaylistScreen() {
           renderItem={({ item }) => {
             const selectableItem = isSelectable(item);
             const openable = item.existing.status === 'COMPLETED' && !!item.existing.analysisId;
+            const inProgress = isInProgress(item);
             const on = selected.has(item.videoId);
+            const opening = openingId === item.videoId;
             return (
               <Pressable
-                disabled={!selectableItem && !openable}
-                onPress={() => (openable ? openResult(item.existing.analysisId!) : toggle(item.videoId))}
-                style={[s.row, !selectableItem && !openable && { opacity: 0.45 }]}
+                disabled={!selectableItem && !openable && !inProgress}
+                onPress={() => {
+                  if (openable) openResult(item.existing.analysisId!);
+                  else if (inProgress) void openProgress(item);
+                  else toggle(item.videoId);
+                }}
+                style={[s.row, !selectableItem && !openable && !inProgress && { opacity: 0.45 }]}
               >
                 {selectableItem ? (
                   <View style={[s.check, on && s.checkOn]}>{on ? <Text style={{ color: '#fff' }}>✓</Text> : null}</View>
@@ -108,10 +135,17 @@ export default function PlaylistScreen() {
                   <Text style={font.body} numberOfLines={2}>{item.title}</Text>
                   <Text style={font.caption}>{note(item)}</Text>
                 </View>
+                {inProgress ? (
+                  <View style={s.progressBtn}>
+                    {opening
+                      ? <ActivityIndicator size="small" color={colors.primary} />
+                      : <Text style={s.progressText}>진행 상태 보기</Text>}
+                  </View>
+                ) : null}
               </Pressable>
             );
           }}
-                    ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: space.lg }} color={colors.textSub} /> : undefined}
+          ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: space.lg }} color={colors.textSub} /> : undefined}
         />
         <View style={s.bar}>
           {issue ? (
@@ -131,5 +165,7 @@ const s = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: 1, borderBottomColor: colors.border },
   check: { width: 22, height: 22, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  progressBtn: { minWidth: 88, height: 32, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  progressText: { ...font.caption, color: colors.primaryStrong },
   bar: { padding: space.lg, backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.border },
 });
