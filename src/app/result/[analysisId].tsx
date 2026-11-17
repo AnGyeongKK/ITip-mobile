@@ -1,6 +1,6 @@
 // RESULT-SUMMARY / RESULT-MINDMAP / RESULT-DETAIL (피그마 11/06) · ANALYSIS-04
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ApiError } from '@/api/client';
 import type { Analysis, ResultTab } from '@/api/types';
@@ -26,11 +26,14 @@ export default function ResultScreen() {
   const q = useAnalysis(analysisId);
   const record = useRecord(q.data?.recordId ?? '');
   const save = useSaveReadingPosition();
-  const [selectedTab, setTab] = useState<ResultTab>();
+  const [tab, setTab] = useState<ResultTab>(tabParam ?? 'SUMMARY');
   const [agentOpen, setAgentOpen] = useState(false);
   const [playAt, setPlayAt] = useState<number | null>(null);
-  const readingPosition = record.data?.readingPosition;
-  const tab = selectedTab ?? tabParam ?? readingPosition?.tab ?? 'SUMMARY';
+
+  // 처음 열었을 때 저장된 탭으로 이동 (파라미터가 없을 때만)
+  useEffect(() => {
+    if (!tabParam && record.data?.readingPosition.tab) setTab(record.data.readingPosition.tab);
+  }, [record.data?.readingPosition.tab, tabParam]);
 
   const changeTab = (t: ResultTab) => {
     setTab(t);
@@ -54,7 +57,7 @@ export default function ResultScreen() {
   }
   const a = q.data;
   const summaryOnly = a.coverage === 'SUMMARY_ONLY';
-  const selectedSectionId = readingPosition?.sectionId ?? null;
+  const selectedSectionId = record.data?.readingPosition.sectionId ?? null;
 
   return (
     <AppScreen onAgent={() => setAgentOpen(true)}>
