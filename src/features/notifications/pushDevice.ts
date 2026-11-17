@@ -30,7 +30,7 @@ async function ensureChannel() {
 }
 
 const toPermission = (status: string): NotificationPermission =>
-  status === 'granted' ? 'GRANTED' : status === 'denied' ? 'DENIED' : 'UNDETERMINED';
+  status === 'granted' ? 'GRANTED' : status === 'denied' ? 'DENIED' : 'NOT_DETERMINED';
 
 let syncing: Promise<void> | null = null;
 
