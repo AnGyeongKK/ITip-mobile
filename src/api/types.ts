@@ -236,7 +236,7 @@ export interface Conversation {
   recordCount: number;
   createdAt: string;
   updatedAt?: string;
-  scopeStatus?: 'AVAILABLE' | 'UNAVAILABLE';
+  scopeStatus?: 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE';
   activeAssistantMessageId: Id | null;
 }
 

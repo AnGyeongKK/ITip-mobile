@@ -5,10 +5,13 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 function load(file, dependencies = {}) {
-  const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
   const module = { exports: {} };
   const localRequire = (name) => {
     if (name in dependencies) return dependencies[name];
+    if (name.endsWith('.svg')) return name;
     throw new Error(`Unexpected dependency: ${name}`);
   };
   vm.runInThisContext(`(function(require, module, exports, process) { ${js}\n})`, { filename: file })(localRequire, module, module.exports, process);
@@ -75,6 +78,57 @@ test('saved conversation cannot send while loading or when its scope is unavaila
   const scope = { type: 'RECORD', recordId: '1' };
   assert.equal(isConversationSendLocked(false, false, true, undefined, undefined), true);
   assert.equal(isConversationSendLocked(false, false, true, scope, 'UNAVAILABLE'), true);
+  assert.equal(isConversationSendLocked(false, false, true, scope, 'EMPTY'), true);
   assert.equal(isConversationSendLocked(false, false, true, scope, 'AVAILABLE'), false);
   assert.equal(isConversationSendLocked(false, false, false, undefined, undefined), false);
+});
+
+function renderSavedConversation(status) {
+  const scope = { type: 'ALL' };
+  const history = [{ key: 'old-user', role: 'USER', content: '이전 질문' }];
+  const state = [true, 'room', history, '', false, scope, '전체 분석 기록', status];
+  let stateIndex = 0;
+  const jsx = (type, props) => ({ type, props });
+  const native = {
+    Animated: { Value: class { interpolate() { return 0; } } },
+    PanResponder: { create: () => ({}) },
+    Keyboard: { dismiss: () => {} },
+    StyleSheet: { create: (s) => s },
+    Platform: { OS: 'android' },
+  };
+  const { AgentSheet } = load('src/components/AgentSheet.tsx', {
+    'react/jsx-runtime': { jsx, jsxs: jsx },
+    react: {
+      useState: (initial) => [stateIndex < state.length ? state[stateIndex++] : typeof initial === 'function' ? initial() : initial, () => {}],
+      useCallback: (callback) => callback,
+      useMemo: (factory) => factory(),
+      useRef: (value) => ({ current: value }),
+      useEffect: () => {},
+    },
+    'react-native': new Proxy(native, { get: (target, key) => target[key] ?? key }),
+    'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
+    '@tanstack/react-query': { useQueryClient: () => ({}) },
+    'expo-router': {},
+    '../api/client': { newIdempotencyKey: () => uuid },
+    '../api/chat': {},
+    '../lib/format': {},
+    '../theme/tokens': { colors: {}, radius: {}, space: {}, typography: {} },
+    './ui': { Icon: 'Icon' },
+    '../features/chat/savedScopePresentation': load('src/features/chat/savedScopePresentation.ts'),
+  });
+  const session = AgentSheet({ visible: true, startFull: true, conversationId: 'room', context: { scope, suggestions: [] } });
+  return JSON.stringify(session.type(session.props));
+}
+
+test('an empty or unavailable saved scope explains the lock and keeps existing chat visible', () => {
+  for (const status of ['EMPTY', 'UNAVAILABLE']) {
+    const tree = renderSavedConversation(status);
+    assert.match(tree, /새 질문을 보낼 수 없어요/);
+    assert.match(tree, /이전 질문/);
+    assert.match(tree, /"editable":false/);
+    assert.doesNotMatch(tree, /새 대화/);
+  }
+  const available = renderSavedConversation('AVAILABLE');
+  assert.match(available, /새 대화/);
+  assert.match(available, /"editable":true/);
 });

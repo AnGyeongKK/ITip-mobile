@@ -1,6 +1,6 @@
-import type { ChatScope } from '../../api/types';
+import type { ChatScope, Conversation } from '../../api/types';
 
-export function isConversationSendLocked(busy: boolean, pending: boolean, savedConversation: boolean, scope: ChatScope | undefined, status: 'AVAILABLE' | 'UNAVAILABLE' | undefined) {
+export function isConversationSendLocked(busy: boolean, pending: boolean, savedConversation: boolean, scope: ChatScope | undefined, status: Conversation['scopeStatus']) {
   return busy || pending || (savedConversation && (!scope || status !== 'AVAILABLE'));
 }
 

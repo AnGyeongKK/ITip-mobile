@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { newIdempotencyKey } from '../api/client';
 import * as chatApi from '../api/chat';
-import type { AssistantStatus, ChatMessage, ChatScope, ChatSource } from '../api/types';
+import type { AssistantStatus, ChatMessage, ChatScope, ChatSource, Conversation } from '../api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatMs } from '../lib/format';
 import { colors, radius, space, typography } from '../theme/tokens';
@@ -78,7 +78,7 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
   const [busy, setBusy] = useState(!!initialId);
   const [savedScope, setSavedScope] = useState<ChatScope>();
   const [savedScopeLabel, setSavedScopeLabel] = useState<string>();
-  const [savedScopeStatus, setSavedScopeStatus] = useState<'AVAILABLE' | 'UNAVAILABLE'>();
+  const [savedScopeStatus, setSavedScopeStatus] = useState<Conversation['scopeStatus']>();
   const [pending, setPending] = useState<PendingAssistant | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -167,7 +167,8 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
     return () => controller.abort();
   }, [initialId, recover]);
 
-  const unavailable = savedScopeStatus === 'UNAVAILABLE';
+  const scopeEmpty = savedScopeStatus === 'EMPTY';
+  const unavailable = scopeEmpty || savedScopeStatus === 'UNAVAILABLE';
   const locked = isConversationSendLocked(busy, !!pending, !!initialId, savedScope, savedScopeStatus);
   const refreshStatus = () => {
     if (!pending || operation.current) return;
@@ -315,7 +316,11 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
       >
         <Pressable onPress={Keyboard.dismiss} accessible={false} style={{ flexGrow: 1, gap: 20 }}>
           {unavailable
-            ? <Text style={[typography.body14Medium, { color: colors.textSub }]}>참고하던 분석 기록을 사용할 수 없어 새 질문을 보낼 수 없어요. 이전 대화는 확인할 수 있어요.</Text>
+            ? <Text style={[typography.body14Medium, { color: colors.textSub }]}>
+                {scopeEmpty
+                  ? '이 범위에 남은 분석 기록이 없어 새 질문을 보낼 수 없어요. 이전 대화는 확인할 수 있어요.'
+                  : '참고하던 분석 기록을 사용할 수 없어 새 질문을 보낼 수 없어요. 이전 대화는 확인할 수 있어요.'}
+              </Text>
             : <Text style={styles.answer}>{displayContext.intro}</Text>}
 
           {messages.length === 0 ? (
