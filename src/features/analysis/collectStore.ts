@@ -13,6 +13,7 @@ interface CollectState {
   allowedBatches: string[];
   rememberBatch: (batchId: string) => void;
   allowBatch: (batchId: string) => void;
+  requireResume: (batchId: string) => void;
   pauseCollections: () => void;
   finishHydration: () => void;
   setPhase: (key: string, phase: Phase | null) => void;
@@ -25,6 +26,7 @@ export const useCollectStore = create<CollectState>()(persist((set) => ({
   hydrated: false,
   allowedBatches: [],
   rememberBatch: (batchId) => set({ batchId }),
+  requireResume: (batchId) => set((s) => ({ batchId, allowedBatches: s.allowedBatches.filter((id) => id !== batchId) })),
   allowBatch: (batchId) => set((s) => ({
     blocked: false,
     allowedBatches: s.allowedBatches.includes(batchId) ? s.allowedBatches : [...s.allowedBatches, batchId],

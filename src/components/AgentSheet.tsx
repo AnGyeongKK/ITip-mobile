@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatMs } from '../lib/format';
 import { colors, radius, space, typography } from '../theme/tokens';
 import { Icon } from './ui';
+import { savedScopePresentation } from '../features/chat/savedScopePresentation';
 
 export type AgentContext = {
   scope: ChatScope;
@@ -76,6 +77,7 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(!!initialId);
   const [savedScope, setSavedScope] = useState<ChatScope>();
+  const [savedScopeLabel, setSavedScopeLabel] = useState<string>();
   const [pending, setPending] = useState<PendingAssistant | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -145,6 +147,7 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
           : undefined;
         if (signal.aborted) return;
         setSavedScope(conversation.scope);
+        setSavedScopeLabel(conversation.scopeLabel);
         setMessages([...page.items, ...(active && !page.items.some((m) => m.messageId === active.messageId) ? [active] : [])].map(fromServer));
         if (active && chatApi.isAssistantPending(active.status)) {
           await recover({ conversationId: initialId, clientRequestId: active.clientRequestId, assistantId: active.messageId }, controller);
@@ -254,6 +257,13 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
     setError(null);
   };
 
+  const displayContext = savedScope ? {
+    ...context,
+    scopeTitle: savedScopeLabel ?? context.scopeTitle,
+    scopeSub: undefined,
+    ...savedScopePresentation(savedScope),
+  } : context;
+
   const body = (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <Pressable style={styles.head} onPress={Keyboard.dismiss} accessible={false}>
@@ -280,9 +290,9 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
 
       <View style={styles.scopeBox}>
         <Text style={[typography.body14Semibold, { color: colors.textSub }]}>참고중</Text>
-        <Text style={typography.subtitle16Bold} numberOfLines={1}>{context.scopeTitle}</Text>
+        <Text style={typography.subtitle16Bold} numberOfLines={1}>{displayContext.scopeTitle}</Text>
         <View style={styles.scopeFoot}>
-          <Text style={[typography.body14Medium, { color: colors.textMuted, flexShrink: 1 }]} numberOfLines={1}>{context.scopeSub ?? ''}</Text>
+          <Text style={[typography.body14Medium, { color: colors.textMuted, flexShrink: 1 }]} numberOfLines={1}>{displayContext.scopeSub ?? ''}</Text>
           {/* '범위 변경'은 범위를 바꾸는 API가 없어 두지 않는다. 대화가 있으면 같은 자리에 '새 대화' */}
           {messages.length ? (
             <Pressable onPress={newChat} style={styles.smallBtn} accessibilityRole="button">
@@ -301,7 +311,7 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         <Pressable onPress={Keyboard.dismiss} accessible={false} style={{ flexGrow: 1, gap: 20 }}>
-          <Text style={styles.answer}>{context.intro}</Text>
+          <Text style={styles.answer}>{displayContext.intro}</Text>
 
           {messages.length === 0 ? (
             <View style={{ gap: 18, alignItems: 'flex-start' }}>
@@ -333,7 +343,7 @@ function AgentSession({ visible, onClose: onCloseProp, context, conversationId: 
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder={context.placeholder}
+            placeholder={displayContext.placeholder}
             placeholderTextColor={colors.textDisabled}
             style={styles.input}
             multiline

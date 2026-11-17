@@ -1,5 +1,5 @@
 import { ApiError } from '@/api/client';
-import { formatDuration, getJob, type PlaylistItem } from '@/api/intake';
+import { conflictBatchId, formatDuration, getJob, type PlaylistItem } from '@/api/intake';
 import { AppScreen } from '@/components/AppShell';
 import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
 import { Button, EmptyView, LoadingView } from '@/components/ui';
@@ -19,6 +19,7 @@ const isInProgress = (i: PlaylistItem) => i.existing.status === 'PROCESSING' && 
 function note(i: PlaylistItem): string {
   if (i.existing.status === 'COMPLETED') return '분석 완료 · 눌러서 결과 보기';
   if (i.existing.status === 'PROCESSING') return '분석 중인 영상이에요';
+  if (i.existing.status === 'AWAITING_UPLOAD') return '자막 수집 대기 · 눌러서 재개';
   if (i.eligibility === 'INELIGIBLE') {
     return i.reasonCode === 'DURATION_EXCEEDED' ? '60분을 넘어 분석할 수 없어요'
       : i.reasonCode === 'VIDEO_UNAVAILABLE' ? '접근할 수 없는 영상이에요' : '분석할 수 없는 영상이에요';
@@ -57,6 +58,15 @@ export default function PlaylistScreen() {
       const b = await createBatch.mutateAsync({ videoIds: [...selected], playlistId: head?.playlistId ?? playlistId });
       router.replace({ pathname: '/analyze/[batchId]', params: { batchId: b.batchId } });
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.code === 'STATE_CONFLICT') {
+        const batchId = conflictBatchId(e);
+        if (batchId) {
+          useCollectStore.getState().requireResume(batchId);
+          return router.replace({ pathname: '/analyze/[batchId]', params: { batchId } });
+        }
+        setSelected(new Set());
+        await q.refetch();
+      }
       setIssue(toIssue(e));
     }
   };
@@ -69,7 +79,7 @@ export default function PlaylistScreen() {
     setOpeningId(item.videoId);
     try {
       const job = await getJob(jobId);
-      useCollectStore.getState().rememberBatch(job.batchId);
+      useCollectStore.getState().requireResume(job.batchId);
       router.push({ pathname: '/analyze/[batchId]', params: { batchId: job.batchId } });
     } catch (e) {
       setIssue(toIssue(e));
@@ -116,17 +126,23 @@ export default function PlaylistScreen() {
             const selectableItem = isSelectable(item);
             const openable = item.existing.status === 'COMPLETED' && !!item.existing.analysisId;
             const inProgress = isInProgress(item);
+            const awaitingUpload = item.existing.status === 'AWAITING_UPLOAD' && !!item.existing.batchId;
             const on = selected.has(item.videoId);
             const opening = openingId === item.videoId;
             return (
               <Pressable
-                disabled={!selectableItem && !openable && !inProgress}
+                disabled={!selectableItem && !openable && !inProgress && !awaitingUpload}
                 onPress={() => {
                   if (openable) openResult(item.existing.analysisId!);
                   else if (inProgress) void openProgress(item);
+                  else if (awaitingUpload) {
+                    const batchId = item.existing.batchId!;
+                    useCollectStore.getState().requireResume(batchId);
+                    router.push({ pathname: '/analyze/[batchId]', params: { batchId } });
+                  }
                   else toggle(item.videoId);
                 }}
-                style={[s.row, !selectableItem && !openable && !inProgress && { opacity: 0.45 }]}
+                style={[s.row, !selectableItem && !openable && !inProgress && !awaitingUpload && { opacity: 0.45 }]}
               >
                 {selectableItem ? (
                   <View style={[s.check, on && s.checkOn]}>{on ? <Text style={{ color: '#fff' }}>✓</Text> : null}</View>
@@ -135,11 +151,11 @@ export default function PlaylistScreen() {
                   <Text style={font.body} numberOfLines={2}>{item.title}</Text>
                   <Text style={font.caption}>{note(item)}</Text>
                 </View>
-                {inProgress ? (
+                {inProgress || awaitingUpload ? (
                   <View style={s.progressBtn}>
                     {opening
                       ? <ActivityIndicator size="small" color={colors.primary} />
-                      : <Text style={s.progressText}>진행 상태 보기</Text>}
+                      : <Text style={s.progressText}>{awaitingUpload ? '수집 재개' : '진행 상태 보기'}</Text>}
                   </View>
                 ) : null}
               </Pressable>

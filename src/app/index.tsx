@@ -1,5 +1,5 @@
 import { ApiError } from '@/api/client';
-import { getJob } from '@/api/intake';
+import { conflictBatchId, getJob } from '@/api/intake';
 import type { Video } from '@/api/types';
 import { AppScreen } from '@/components/AppShell';
 import { IntakeError, toIssue, type Issue } from '@/components/IntakeError';
@@ -55,11 +55,16 @@ export default function Home() {
       }
       // 기존 결과가 있으면 결과로, 진행 중이면 작업의 배치 진행 화면으로
       if (r.existing.status === 'COMPLETED' && r.existing.analysisId) return openResult(r.existing.analysisId);
+      if (r.existing.status === 'AWAITING_UPLOAD' && r.existing.batchId) {
+        useCollectStore.getState().requireResume(r.existing.batchId);
+        return router.push({ pathname: '/analyze/[batchId]', params: { batchId: r.existing.batchId } });
+      }
       if (r.existing.status === 'PROCESSING' && r.existing.jobId) {
         const job = await getJob(r.existing.jobId);
-        useCollectStore.getState().rememberBatch(job.batchId);
+        useCollectStore.getState().requireResume(job.batchId);
         return router.push({ pathname: '/analyze/[batchId]', params: { batchId: job.batchId } });
       }
+      if (r.existing.status !== 'NONE') return setIssue({ code: 'GENERIC' });
       const d = r.metadata?.durationMs;
       if (d != null && d > r.captionRequirement.maxDurationMs) return setIssue({ code: 'DURATION_EXCEEDED' });
       setCandidate({ videoId: r.videoId, metadata: r.metadata });
@@ -85,6 +90,14 @@ export default function Home() {
       const b = await createBatch.mutateAsync({ videoIds: [candidate.videoId] });
       router.push({ pathname: '/analyze/[batchId]', params: { batchId: b.batchId } });
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.code === 'STATE_CONFLICT') {
+        const batchId = conflictBatchId(e);
+        if (batchId) {
+          useCollectStore.getState().requireResume(batchId);
+          return router.push({ pathname: '/analyze/[batchId]', params: { batchId } });
+        }
+        return submit(text);
+      }
       setIssue(toIssue(e));
     }
   };
