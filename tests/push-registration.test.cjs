@@ -15,7 +15,7 @@ function load(file, dependencies) {
 
 const installationId = '550e8400-e29b-41d4-a716-446655440000';
 
-function openRegistration(status) {
+function openRegistration(status, options = {}) {
   const calls = [];
   let tokenReads = 0;
   const values = new Map();
@@ -32,10 +32,16 @@ function openRegistration(status) {
     'expo-notifications': {
       AndroidImportance: { HIGH: 4 }, setNotificationChannelAsync: async () => {},
       getPermissionsAsync: async () => ({ status }),
-      getDevicePushTokenAsync: async () => { tokenReads++; return { data: 'synthetic-token' }; },
+      getDevicePushTokenAsync: async () => {
+        tokenReads++;
+        if (options.tokenError) throw new Error('Firebase unavailable');
+        return { data: 'synthetic-token' };
+      },
     },
     'react-native': { Platform: { OS: 'android' } },
     '@/api/devices': devices,
+    '@/api/client': { USE_MOCK: false, API_BASE_URL: 'https://fixture.invalid' },
+    './mode': { LOCAL_ANALYSIS_NOTIFICATIONS: options.local ?? false },
   });
   return { syncPushDevice, calls, tokenReads: () => tokenReads };
 }
@@ -55,4 +61,24 @@ test('Android registration sends the server permission enum and only reads a tok
     }]);
     assert.equal(device.tokenReads() > 0, status === 'granted');
   }
+});
+
+test('missing Firebase token returns a retryable status without claiming registration succeeded', async () => {
+  const device = openRegistration('granted', { tokenError: true });
+  assert.equal(await device.syncPushDevice(), 'token_unavailable');
+  assert.equal(await device.syncPushDevice({ knownToken: 'refreshed-token' }), 'registered');
+  assert.equal(device.calls.at(-1).data.fcmToken, 'refreshed-token');
+});
+
+test('permission states are reported to the UI independently from the server registration', async () => {
+  assert.equal(await openRegistration('undetermined').syncPushDevice(), 'permission_required');
+  assert.equal(await openRegistration('denied').syncPushDevice(), 'permission_denied');
+  assert.equal(await openRegistration('granted').syncPushDevice(), 'registered');
+});
+
+test('local notifications require no Firebase token or remote device registration', async () => {
+  const device = openRegistration('granted', { local: true, tokenError: true });
+  assert.equal(await device.syncPushDevice(), 'local_ready');
+  assert.equal(device.tokenReads(), 0);
+  assert.deepEqual(device.calls, []);
 });

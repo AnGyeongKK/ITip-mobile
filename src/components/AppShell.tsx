@@ -20,7 +20,7 @@ const NAV: NavItem[][] = [
   ],
   [{ label: '요금제 / 구독', disabledNote: '시연 이후' }],
   [
-    { label: '알림 설정', disabledNote: '시연 이후' },
+    { label: '알림 설정', href: '/settings/notifications' },
     { label: '계정 설정', disabledNote: '시연 이후' },
   ],
 ];

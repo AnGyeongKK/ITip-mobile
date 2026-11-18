@@ -44,11 +44,13 @@ export function parseJson3(raw: string, videoId: string, durationMs: number | nu
       !Number.isSafeInteger(duration) || startMs < 0 || duration <= 0) {
       throw new CaptionError('UPLOAD_FAILED');
     }
-    const endMs = startMs + duration;
-    if (!Number.isSafeInteger(endMs) || (durationMs != null && endMs > durationMs) ||
+    const rawEndMs = startMs + duration;
+    if (!Number.isSafeInteger(rawEndMs) ||
       startMs < (segments.at(-1)?.startMs ?? 0)) {
       throw new CaptionError('UPLOAD_FAILED');
     }
+    if (durationMs != null && startMs >= durationMs) continue;
+    const endMs = durationMs == null ? rawEndMs : Math.min(rawEndMs, durationMs);
     segments.push({ startMs, endMs, text });
   }
   if (segments.length === 0) throw new CaptionError('KOREAN_CAPTION_NOT_FOUND');
