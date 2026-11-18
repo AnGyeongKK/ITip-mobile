@@ -169,6 +169,7 @@ class LocalAnalysisWorker(context: Context, parameters: WorkerParameters) : Coro
       prefs.edit().remove("upload-$itemId").apply()
       setState("PROCESSING")
     } catch (failure: CodedException) {
+      Log.w("ITipLocalAnalysis", "batchId=$batchId itemId=$itemId captionCode=${failure.code} reason=${failure.message?.replace(Regex("https?://\\S+"), "[url]")?.take(300)}")
       val code = when (failure.code) {
         "RATE_LIMITED" -> "COLLECTION_RATE_LIMITED"
         "NO_CAPTION" -> "KOREAN_CAPTION_NOT_FOUND"
@@ -179,6 +180,7 @@ class LocalAnalysisWorker(context: Context, parameters: WorkerParameters) : Coro
       setState(if (code == "COLLECTION_RATE_LIMITED") "RATE_LIMITED" else "PROCESSING")
       reportFailure(itemId, code)
     } catch (failure: ApiFailure) {
+      Log.w("ITipLocalAnalysis", "batchId=$batchId itemId=$itemId uploadOrSubmitStatus=${failure.status}")
       if (failure.status >= 500) throw failure
       if (failure.status != 409) reportFailure(itemId, "UPLOAD_FAILED")
       setState("PROCESSING")

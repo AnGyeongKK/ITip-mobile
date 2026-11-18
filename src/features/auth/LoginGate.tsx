@@ -1,6 +1,7 @@
 import { router, useGlobalSearchParams, usePathname, useRootNavigationState } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { getLaunchNotificationResponse } from '@/features/notifications/launchResponse';
+import * as Notifications from 'expo-notifications';
+import { notificationTarget } from '@/features/notifications/launchResponse';
 import { useMockAuth } from './mockAuth';
 
 /**
@@ -13,14 +14,15 @@ export function LoginGate() {
   const { sharedUrl } = useGlobalSearchParams<{ sharedUrl?: string }>();
   const signedIn = useMockAuth((s) => s.signedIn);
   const checked = useRef(false);
+  const notification = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
-    if (!nav?.key || checked.current) return;
+    if (!nav?.key || checked.current || notification === undefined) return;
     checked.current = true;
     // 알림을 눌러 실행된 경우는 알림 처리기가 결과·배치 화면을 연다
-    if (getLaunchNotificationResponse()) return;
+    if (notificationTarget(notification)) return;
     if (!signedIn && path === '/' && !sharedUrl) router.replace('/login' as never);
-  }, [nav?.key, path, sharedUrl, signedIn]);
+  }, [nav?.key, path, sharedUrl, signedIn, notification]);
 
   return null;
 }

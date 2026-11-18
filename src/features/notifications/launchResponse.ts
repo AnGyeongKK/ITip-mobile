@@ -1,18 +1,15 @@
 import * as Notifications from 'expo-notifications';
 
-let launch: Notifications.NotificationResponse | null | undefined;
-
-/**
- * 알림을 눌러 앱이 처음 실행됐는지. 처음 읽은 값을 기억해서
- * 알림 처리기가 응답을 지운 뒤에도 LoginGate가 같은 답을 받는다.
- */
-export function getLaunchNotificationResponse(): Notifications.NotificationResponse | null {
-  if (launch === undefined) {
-    try {
-      launch = Notifications.getLastNotificationResponse();
-    } catch {
-      launch = null;
-    }
+export function notificationTarget(response: Notifications.NotificationResponse | null | undefined) {
+  if (!response || response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return null;
+  const data = response.notification.request.content.data;
+  if (data?.type !== 'ANALYSIS_BATCH_FINISHED') return null;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (typeof data.analysisId === 'string' && uuid.test(data.analysisId)) {
+    return { pathname: '/result/[analysisId]' as const, params: { analysisId: data.analysisId } };
   }
-  return launch;
+  if (typeof data.batchId === 'string' && uuid.test(data.batchId)) {
+    return { pathname: '/analyze/[batchId]' as const, params: { batchId: data.batchId } };
+  }
+  return null;
 }

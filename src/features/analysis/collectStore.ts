@@ -11,6 +11,7 @@ interface CollectState {
   blocked: boolean;
   hydrated: boolean;
   allowedBatches: string[];
+  backgroundError: string | null;
   rememberBatch: (batchId: string) => void;
   allowBatch: (batchId: string) => void;
   requireResume: (batchId: string) => void;
@@ -25,6 +26,7 @@ export const useCollectStore = create<CollectState>()(persist((set) => ({
   blocked: false,
   hydrated: false,
   allowedBatches: [],
+  backgroundError: null,
   rememberBatch: (batchId) => set({ batchId }),
   // 이미 시작된 수집은 유지하고, 복구된 배치에는 새 권한을 추가하지 않는다.
   requireResume: (batchId) => set({ batchId }),

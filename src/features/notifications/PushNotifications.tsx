@@ -6,7 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { router, useRootNavigationState } from 'expo-router';
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
-import { getLaunchNotificationResponse } from './launchResponse';
+import { notificationTarget } from './launchResponse';
 import { syncPushDevice } from './pushDevice';
 
 // 앱을 보고 있는 중에 온 알림도 배너로 보여준다.
@@ -19,28 +19,22 @@ Notifications.setNotificationHandler({
   }),
 });
 
-type PushData = { type?: unknown; batchId?: unknown; analysisId?: unknown };
-
 // 시작 시 응답과 리스너가 같은 알림을 함께 넘겨줄 수 있어 한 번만 연다.
 const handled = new Set<string>();
 
-function openFromResponse(response: Notifications.NotificationResponse | null) {
-  if (!response || response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+function openFromResponse(response: Notifications.NotificationResponse | null | undefined) {
+  const target = notificationTarget(response);
+  if (!response || !target) return;
   const id = response.notification.request.identifier;
   if (handled.has(id)) return;
   handled.add(id);
-  const data = (response.notification.request.content.data ?? {}) as PushData;
-  if (data.type !== 'ANALYSIS_BATCH_FINISHED') return;
-  if (typeof data.analysisId === 'string' && data.analysisId) {
-    router.push({ pathname: '/result/[analysisId]', params: { analysisId: data.analysisId } });
-  } else if (typeof data.batchId === 'string' && data.batchId) {
-    router.push({ pathname: '/analyze/[batchId]', params: { batchId: data.batchId } });
-  }
+  router.push(target);
 }
 
 export function PushNotifications() {
   const nav = useRootNavigationState();
   const ready = !!nav?.key;
+  const response = Notifications.useLastNotificationResponse();
 
   // 기기 등록: 시작할 때, 앱으로 돌아올 때(설정에서 권한을 바꿨을 수 있음), 토큰이 바뀔 때
   useEffect(() => {
@@ -54,18 +48,11 @@ export function PushNotifications() {
 
   // 알림 탭: 처음 실행된 경우는 시작 시 마지막 응답으로, 실행 중에는 리스너로 처리
   useEffect(() => {
-    if (!ready) return;
-    const launch = getLaunchNotificationResponse();
-    if (launch) {
-      openFromResponse(launch);
+    if (ready && response) {
+      openFromResponse(response);
       Notifications.clearLastNotificationResponse();
     }
-    const sub = Notifications.addNotificationResponseReceivedListener((r) => {
-      openFromResponse(r);
-      Notifications.clearLastNotificationResponse();
-    });
-    return () => sub.remove();
-  }, [ready]);
+  }, [ready, response]);
 
   return null;
 }

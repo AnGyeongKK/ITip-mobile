@@ -1,4 +1,4 @@
-import { newIdempotencyKey } from '@/api/client';
+import { newIdempotencyKey, USE_MOCK } from '@/api/client';
 import {
   canCollectCaption, isBatchDone, needsRecollect, resolveRetry,
   type BatchItem, type RetryOutcome, type Stage,
@@ -9,6 +9,8 @@ import { Button, ErrorView, LoadingView } from '@/components/ui';
 import { VideoThumb } from '@/components/VideoInfoCard';
 import { itemKey, useCollectStore, type Phase } from '@/features/analysis/collectStore';
 import { useCaptionCollection } from '@/features/analysis/useCaptionCollection';
+import { resumeLocalAnalysis } from '@/features/analysis/localBackground';
+import { LOCAL_ANALYSIS_NOTIFICATIONS } from '@/features/notifications/mode';
 import { useBatch, useCreateBatch, useRetryJob } from '@/hooks/intakeQueries';
 import { qk } from '@/hooks/queries';
 import { openResult } from '@/lib/handoff';
@@ -126,6 +128,7 @@ export default function Analyze() {
   const qc = useQueryClient();
   const phases = useCollectStore((st) => st.phases);
   const blocked = useCollectStore((st) => st.blocked);
+  const backgroundError = useCollectStore((st) => st.backgroundError);
   const hydrated = useCollectStore((st) => st.hydrated);
   const allowed = useCollectStore((st) => st.allowedBatches.includes(batchId));
   const allowBatch = useCollectStore((st) => st.allowBatch);
@@ -161,7 +164,23 @@ export default function Analyze() {
     setResumeIssue(null);
     try {
       const next = await q.refetch({ throwOnError: true });
-      if (next.data?.items.some(canCollectCaption)) allowBatch(batchId);
+      if (next.data?.items.some(canCollectCaption)) {
+        if (!USE_MOCK && LOCAL_ANALYSIS_NOTIFICATIONS) await resumeLocalAnalysis(batchId);
+        allowBatch(batchId);
+      }
+    } catch (e) {
+      setResumeIssue(toIssue(e));
+    } finally {
+      setResuming(false);
+    }
+  }
+
+  async function reconnectBackground() {
+    setResuming(true);
+    try {
+      await resumeLocalAnalysis(batchId);
+      useCollectStore.setState({ backgroundError: null });
+      await q.refetch();
     } catch (e) {
       setResumeIssue(toIssue(e));
     } finally {
@@ -187,12 +206,21 @@ export default function Analyze() {
         ) : canResume ? (
           <Text style={[font.sub, { marginTop: space.xs }]}>아직 자막을 보내지 않은 영상이 있어요.</Text>
         ) : hasUploadToResume || collecting ? (
-          <Text style={[font.sub, { marginTop: space.xs }]}>자막을 이 기기에서 수집해요. 수집이 끝날 때까지 앱을 켜 두세요.</Text>
+          <Text style={[font.sub, { marginTop: space.xs }]}>
+            {LOCAL_ANALYSIS_NOTIFICATIONS
+              ? '자막을 이 기기에서 수집해요. 화면을 닫아도 수집과 분석은 계속돼요.'
+              : '자막을 이 기기에서 수집해요. 수집이 끝날 때까지 앱을 켜 두세요.'}
+          </Text>
         ) : batch.counts.awaitingUpload > 0 ? (
           <Text style={[font.sub, { marginTop: space.xs }]}>자막 업로드 시간이 지났어요. 필요한 영상은 자막을 다시 수집해 주세요.</Text>
         ) : !done ? (
           <Text style={[font.sub, { marginTop: space.xs }]}>이 화면을 벗어나도 분석은 계속돼요.</Text>
         ) : null}
+        {!done ? <Button title="완료 알림 설정" variant="secondary"
+          style={{ marginTop: space.sm }} onPress={() => router.push('/settings/notifications')} /> : null}
+        {backgroundError ? <Text style={[font.sub, { marginTop: space.sm }]}>{backgroundError}</Text> : null}
+        {backgroundError && !hasUploadToResume ? <Button title="알림 상태 다시 연결" variant="secondary"
+          loading={resuming} onPress={reconnectBackground} style={{ marginTop: space.sm }} /> : null}
         {canResume ? <Button title={blocked ? '다시 시도' : '자막 수집 재개'} onPress={resumeCollection}
           loading={resuming} style={{ marginTop: space.md }} /> : null}
         {resumeIssue ? <View style={{ marginTop: space.sm }}><IntakeError issue={resumeIssue} /></View> : null}

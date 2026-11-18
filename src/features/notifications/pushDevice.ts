@@ -7,6 +7,8 @@ import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import { Platform } from 'react-native';
 import { putDevice, type DeviceRegistration, type NotificationPermission } from '@/api/devices';
+import { API_BASE_URL, USE_MOCK } from '@/api/client';
+import { LOCAL_ANALYSIS_NOTIFICATIONS } from './mode';
 
 export const ANALYSIS_CHANNEL_ID = 'analysis';
 
@@ -32,16 +34,20 @@ async function ensureChannel() {
 const toPermission = (status: string): NotificationPermission =>
   status === 'granted' ? 'GRANTED' : status === 'denied' ? 'DENIED' : 'NOT_DETERMINED';
 
-let syncing: Promise<void> | null = null;
+export type PushRegistrationStatus = 'registered' | 'local_ready' | 'permission_required' | 'permission_denied'
+  | 'token_unavailable' | 'registration_failed' | 'unsupported' | 'mock';
+
+let syncing: Promise<PushRegistrationStatus> | null = null;
 
 /**
  * 현재 권한·토큰을 서버에 반영한다.
  * askPermission: 아직 묻지 않은 상태면 권한 팝업을 띄운다.
  * knownToken: 토큰 갱신 이벤트로 받은 새 토큰.
  */
-export function syncPushDevice(opts: { askPermission?: boolean; knownToken?: string } = {}): Promise<void> {
-  if (Platform.OS !== 'android') return Promise.resolve(); // 설계 범위: Android
-  const run = async () => {
+export function syncPushDevice(opts: { askPermission?: boolean; knownToken?: string } = {}): Promise<PushRegistrationStatus> {
+  if (Platform.OS !== 'android') return Promise.resolve('unsupported');
+  if (USE_MOCK) return Promise.resolve('mock');
+  const run = async (): Promise<PushRegistrationStatus> => {
     try {
       await ensureChannel();
       let { status } = await Notifications.getPermissionsAsync();
@@ -49,6 +55,10 @@ export function syncPushDevice(opts: { askPermission?: boolean; knownToken?: str
         ({ status } = await Notifications.requestPermissionsAsync());
       }
       const permission = toPermission(status);
+      if (LOCAL_ANALYSIS_NOTIFICATIONS) {
+        if (permission === 'NOT_DETERMINED') return 'permission_required';
+        return permission === 'GRANTED' ? 'local_ready' : 'permission_denied';
+      }
       let fcmToken: string | null = null;
       if (permission === 'GRANTED') {
         try {
@@ -59,12 +69,17 @@ export function syncPushDevice(opts: { askPermission?: boolean; knownToken?: str
       }
       const body: DeviceRegistration = { platform: 'ANDROID', fcmToken, notificationPermission: permission };
       const installationId = await getInstallationId();
-      const key = JSON.stringify([installationId, body]);
-      if ((await AsyncStorage.getItem(LAST_SENT_KEY)) === key) return;
-      await putDevice(installationId, body);
-      await AsyncStorage.setItem(LAST_SENT_KEY, key);
+      const key = JSON.stringify([API_BASE_URL, installationId, body]);
+      if ((await AsyncStorage.getItem(LAST_SENT_KEY)) !== key) {
+        await putDevice(installationId, body);
+        await AsyncStorage.setItem(LAST_SENT_KEY, key);
+      }
+      if (permission === 'NOT_DETERMINED') return 'permission_required';
+      if (permission === 'DENIED') return 'permission_denied';
+      return fcmToken ? 'registered' : 'token_unavailable';
     } catch {
       // 등록 실패는 분석·결과 조회를 막지 않는다. 다음 실행이나 앱 복귀 때 다시 보낸다.
+      return 'registration_failed';
     }
   };
   // 동시에 여러 번 불려도 한 번씩 순서대로 처리
