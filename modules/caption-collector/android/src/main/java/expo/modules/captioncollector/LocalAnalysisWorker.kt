@@ -200,10 +200,13 @@ class LocalAnalysisWorker(context: Context, parameters: WorkerParameters) : Coro
       val text = (0 until parts.length()).joinToString("") { parts.getJSONObject(it).optString("utf8", "") }
       if (text.isBlank()) continue
       val start = event.getLong("tStartMs")
-      val end = start + event.getLong("dDurationMs")
-      if (start < previous || start < 0 || end <= start || (duration >= 0 && end > duration)) {
-        throw CodedException("FAILED", "Invalid caption timestamps", null)
+      val rawEnd = start + event.getLong("dDurationMs")
+      if (start < previous || start < 0 || rawEnd <= start) {
+        throw CodedException("FAILED", "Invalid caption timestamps start=$start end=$rawEnd previous=$previous duration=$duration", null)
       }
+      if (duration >= 0 && start >= duration) continue
+      val end = if (duration >= 0) minOf(rawEnd, duration) else rawEnd
+      if (end != rawEnd) Log.i("ITipLocalAnalysis", "batchId=$batchId clippedCaptionEnd=$rawEnd videoDuration=$duration")
       segments.put(JSONObject().put("startMs", start).put("endMs", end).put("text", text))
       previous = start
     }
