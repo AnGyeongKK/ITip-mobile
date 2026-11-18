@@ -18,10 +18,10 @@ const NAV: NavItem[][] = [
     { label: '키워드', href: '/archive/keywords', indent: true },
     { label: 'ITip Agent', href: '/agent' },
   ],
-  [{ label: '요금제 / 구독', disabledNote: '시연 이후' }],
+  [{ label: '요금제 / 구독', disabledNote: '준비 중' }],
   [
     { label: '알림 설정', href: '/settings/notifications' },
-    { label: '계정 설정', disabledNote: '시연 이후' },
+    { label: '계정 설정', disabledNote: '준비 중' },
   ],
 ];
 
@@ -43,7 +43,7 @@ export function NavDrawer({ visible, onClose }: { visible: boolean; onClose: () 
           </View>
           <View style={styles.profile}>
             <View style={styles.avatar} />
-            <Text style={[font.h3, { flex: 1, marginLeft: space.sm }]}>시연 사용자</Text>
+            <Text style={[font.h3, { flex: 1, marginLeft: space.sm }]}>내 라이브러리</Text>
             <View style={styles.planBadge}><Text style={[typography.button12, { color: colors.primaryDeep }]}>Free</Text></View>
           </View>
           {NAV.map((group, gi) => (

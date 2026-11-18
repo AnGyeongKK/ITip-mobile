@@ -43,7 +43,7 @@ class LocalAnalysisWorker(context: Context, parameters: WorkerParameters) : Coro
     val progress = NotificationCompat.Builder(applicationContext, "analysis-progress")
       .setSmallIcon(android.R.drawable.stat_sys_download)
       .setContentTitle("영상 분석을 진행하고 있어요")
-      .setContentText("자막 수집과 로컬 서버 처리를 기다리고 있어요.")
+      .setContentText("자막을 수집하고 영상을 분석하고 있어요.")
       .setOngoing(true).setContentIntent(openBatch()).build()
     val process = ActivityManager.RunningAppProcessInfo()
     ActivityManager.getMyMemoryState(process)
@@ -269,7 +269,7 @@ class LocalAnalysisWorker(context: Context, parameters: WorkerParameters) : Coro
     val route = if (analysisId != null) "result/$analysisId" else "analyze/$batchId"
     val notification = NotificationCompat.Builder(applicationContext, "analysis")
       .setSmallIcon(android.R.drawable.stat_sys_download_done)
-      .setContentTitle("영상 처리가 끝났어요")
+      .setContentTitle("영상 분석이 끝났어요")
       .setContentText("성공 ${counts.getInt("completed")}개, 실패 ${counts.getInt("failed")}개")
       .setContentIntent(openRoute(route)).setAutoCancel(true).setOnlyAlertOnce(true).build()
     if (NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()) {
