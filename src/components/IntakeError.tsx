@@ -1,6 +1,6 @@
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui';
-import { colors, font, radius, space } from '@/theme/tokens';
+import { colors, radius, typography } from '@/theme/tokens';
 import { StyleSheet, Text, View } from 'react-native';
 
 export type Issue = { code: string; message?: string };
@@ -48,11 +48,14 @@ export function IntakeError({ issue, onRetry, onClose }: Props) {
     desc = issue.message ?? '잠시 후 다시 시도해 주세요.'; // 서버 job.error 문구는 그대로 보여준다
   }
   return (
-    <View style={s.box}>
-      <Text style={font.h3}>{title}</Text>
-      <Text style={[font.sub, { marginTop: space.xs }]}>{desc}</Text>
+    <View style={s.box} accessibilityRole="alert">
+      <View style={s.titleRow}>
+        <View style={s.mark}><Text style={s.markText}>!</Text></View>
+        <Text style={[typography.subtitle16Bold, { flex: 1 }]}>{title}</Text>
+      </View>
+      <Text style={s.desc}>{desc}</Text>
       {onRetry || onClose ? (
-        <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.md }}>
+        <View style={s.buttons}>
           {onRetry ? <Button title="다시 시도" onPress={onRetry} style={{ flex: 1 }} /> : null}
           {onClose ? <Button title="확인" variant="secondary" onPress={onClose} style={{ flex: 1 }} /> : null}
         </View>
@@ -62,5 +65,10 @@ export function IntakeError({ issue, onRetry, onClose }: Props) {
 }
 
 const s = StyleSheet.create({
-  box: { padding: space.lg, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  box: { padding: 16, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mark: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  markText: { color: colors.onPrimary, fontSize: 12, lineHeight: 14, fontWeight: '700' },
+  desc: { ...typography.body13Medium, color: colors.textSub, marginTop: 6, paddingLeft: 26 },
+  buttons: { flexDirection: 'row', gap: 8, marginTop: 12 },
 });

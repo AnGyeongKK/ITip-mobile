@@ -5,9 +5,11 @@ import { create } from 'zustand';
 type MockAuthState = {
   signedIn: boolean;
   signIn: () => void;
+  signOut: () => void;
 };
 
 export const useMockAuth = create<MockAuthState>((set) => ({
   signedIn: false,
   signIn: () => set({ signedIn: true }),
+  signOut: () => set({ signedIn: false }),
 }));

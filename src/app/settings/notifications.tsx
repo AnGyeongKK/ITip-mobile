@@ -6,12 +6,12 @@ import { syncPushDevice, type PushRegistrationStatus } from '@/features/notifica
 import { font, space } from '@/theme/tokens';
 
 const messages: Record<PushRegistrationStatus, string> = {
-  local_ready: '이 기기의 완료 알림이 켜졌어요. 로컬 서버의 분석이 끝나면 알려드릴게요.',
+  local_ready: '분석 완료 알림이 켜졌어요. 영상 분석이 끝나면 이 기기로 알려드릴게요.',
   registered: '이 기기의 알림이 등록됐어요. 분석이 끝나면 알려드릴게요.',
   permission_required: '분석 완료 알림을 받으려면 알림을 허용해 주세요.',
   permission_denied: '기기 설정에서 ITip의 알림을 허용해 주세요.',
   token_unavailable: '앱의 알림 연결을 준비하지 못했어요. 앱을 업데이트한 뒤 다시 시도해 주세요.',
-  registration_failed: '서버에 알림 기기를 등록하지 못했어요. 연결을 확인하고 다시 시도해 주세요.',
+  registration_failed: '알림을 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.',
   unsupported: '현재 알림은 Android에서 지원해요.',
   mock: '목업 모드에서는 실제 알림을 보내지 않아요.',
 };

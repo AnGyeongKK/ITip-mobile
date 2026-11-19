@@ -29,7 +29,7 @@ export function useCaptionCollection(batch: Batch | undefined) {
         if (state.phase === 'RATE_LIMITED') store.pauseCollections();
         if (state.phase === 'PAUSED') {
           useCollectStore.setState({
-            backgroundError: '로컬 서버 연결을 확인한 뒤 알림 상태를 다시 연결해 주세요.',
+            backgroundError: '인터넷 연결을 확인한 뒤 다시 연결해 주세요.',
             allowedBatches: store.allowedBatches.filter((id) => id !== batch!.batchId),
           });
         } else if (store.backgroundError) {
@@ -42,7 +42,7 @@ export function useCaptionCollection(batch: Batch | undefined) {
     void startLocalAnalysis(batch.batchId, allowed).then(() => {
       void refresh();
     }).catch(() => {
-      if (active) useCollectStore.setState({ backgroundError: '백그라운드 수집을 시작하지 못했어요. 최신 개발용 앱을 설치한 뒤 다시 시도해 주세요.' });
+      if (active) useCollectStore.setState({ backgroundError: '자막 수집을 시작하지 못했어요. 앱을 업데이트한 뒤 다시 시도해 주세요.' });
     });
     const timer = setInterval(() => { void refresh(); }, 3000);
     return () => {
